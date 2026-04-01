@@ -1,0 +1,219 @@
+// ============================================================
+// Prisma Schema - Harmony Health
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// 平台级：用户主账号
+// ============================================================
+
+model User {
+  id            String    @id @default(uuid())
+  email         String?   @unique
+  phone         String?   @unique
+  passwordHash  String?
+  name          String    @default("")
+  avatar        String?
+  emailVerified Boolean   @default(false)
+  phoneVerified Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  appInstances AppInstance[]
+  devices      Device[]
+
+  @@map("users")
+}
+
+// ============================================================
+// 平台级：APP 实例（支持多 APP 生态）
+// ============================================================
+
+model AppInstance {
+  id        String   @id @default(uuid())
+  appId     String   @default("health")
+  userId    String
+  nickname  String
+  settings  Json     @default("{}")
+  joinedAt  DateTime @default(now())
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  healthCategories HealthCategory[]
+  healthRecords    HealthRecord[]
+  weeklyMeta      WeeklyMeta[]
+  habits          Habit[]
+
+  @@unique([userId, appId])
+  @@map("app_instances")
+}
+
+// ============================================================
+// 设备管理
+// ============================================================
+
+model Device {
+  id           String   @id @default(uuid())
+  userId       String
+  deviceType   String   @default("web")
+  deviceName   String
+  deviceId     String   @unique
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncLogs SyncLog[]
+
+  @@map("devices")
+}
+
+// ============================================================
+// 健康相关
+// ============================================================
+
+model HealthCategory {
+  id            String    @id @default(uuid())
+  appInstanceId String
+  name          String
+  color         String    @default("#C8694A")
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  appInstance AppInstance  @relation(fields: [appInstanceId], references: [id], onDelete: Cascade)
+  fields     HealthField[]
+  records    HealthRecord[]
+
+  @@map("health_categories")
+}
+
+model HealthField {
+  id         String    @id @default(uuid())
+  categoryId String
+  name       String
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  category HealthCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  records  HealthRecord[]
+
+  @@map("health_fields")
+}
+
+model HealthRecord {
+  id            String   @id @default(uuid())
+  appInstanceId String
+  categoryId    String
+  fieldId       String
+  userId        String
+  recordDate    DateTime @db.Date
+  recordWeek    Int
+  recordYear    Int
+  value         Int      @default(0)
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedBy     String
+  deletedAt     DateTime?
+
+  category    HealthCategory @relation(fields: [categoryId], references: [id])
+  field       HealthField    @relation(fields: [fieldId], references: [id])
+  appInstance AppInstance    @relation(fields: [appInstanceId], references: [id])
+
+  @@index([appInstanceId, recordDate])
+  @@index([appInstanceId, categoryId, recordDate])
+  @@map("health_records")
+}
+
+model WeeklyMeta {
+  id            String   @id @default(uuid())
+  appInstanceId String
+  userId        String
+  weekKey       String
+  year          Int
+  weekNumber    Int
+  weight        Decimal? @db.Decimal(5, 2)
+  height        Decimal? @db.Decimal(5, 2)
+  note          String   @default("")
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  updatedBy     String
+  deletedAt     DateTime?
+
+  appInstance AppInstance @relation(fields: [appInstanceId], references: [id])
+
+  @@unique([appInstanceId, weekKey])
+  @@map("weekly_meta")
+}
+
+// ============================================================
+// 习惯打卡
+// ============================================================
+
+model Habit {
+  id            String   @id @default(uuid())
+  appInstanceId String
+  userId        String
+  name          String
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  appInstance AppInstance @relation(fields: [appInstanceId], references: [id])
+  logs       HabitLog[]
+
+  @@map("habits")
+}
+
+model HabitLog {
+  id        String   @id @default(uuid())
+  habitId   String
+  userId    String
+  logDate   DateTime @db.Date
+  weekKey   String
+  status    String   @default("completed")
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String
+
+  habit Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+
+  @@unique([habitId, logDate])
+  @@map("habit_logs")
+}
+
+// ============================================================
+// 同步日志
+// ============================================================
+
+model SyncLog {
+  id         String   @id @default(uuid())
+  userId     String
+  deviceId   String
+  direction  String
+  entityType String
+  entityId   String
+  operation  String
+  status     String   @default("success")
+  errorCode  String?
+  details    Json?
+  createdAt  DateTime @default(now())
+
+  device Device @relation(fields: [deviceId], references: [id])
+
+  @@map("sync_logs")
+}
