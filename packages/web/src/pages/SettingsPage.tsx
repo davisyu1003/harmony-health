@@ -2,30 +2,27 @@
 // 设置页
 // ============================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useHealthStore } from '@/stores/health.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { syncService } from '@/services/sync.service';
-import type { DBHealthCategory, DBHealthField, DBHabit } from '@/db/schema';
+import type { DBHabit } from '@/db/schema';
+
+type ModalAction =
+  | { type: 'addCat' }
+  | { type: 'addField'; catId: string }
+  | { type: 'editField'; catId: string; fieldId: string; currentName: string }
+  | { type: 'addHabit' }
+  | { type: 'editHabit'; habitId: string; currentName: string };
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const [activeNav, setActiveNav] = useState<'home' | 'data' | 'settings'>('settings');
-
-  // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState('');
   const [modalValue, setModalValue] = useState('');
   const modalInputRef = useRef<HTMLInputElement>(null);
-
-  // Modal action
-  type ModalAction =
-    | { type: 'addCat' }
-    | { type: 'addField'; catId: string }
-    | { type: 'editField'; catId: string; fieldId: string; currentName: string }
-    | { type: 'addHabit' }
-    | { type: 'editHabit'; habitId: string; currentName: string };
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
 
   const {
@@ -46,7 +43,6 @@ export function SettingsPage() {
     navigate(`/${name === 'home' ? '' : name}`);
   };
 
-  // 打开 Modal
   const openModal = (title: string, action: ModalAction) => {
     setModalTitle(title);
     setModalAction(action);
@@ -61,7 +57,6 @@ export function SettingsPage() {
     setModalValue('');
   };
 
-  // 确认 Modal
   const confirmModal = async () => {
     const val = modalValue.trim();
     if (!val || !modalAction) return;
@@ -79,11 +74,9 @@ export function SettingsPage() {
       await addField(modalAction.catId, val);
       syncService.enqueueChange({ entityType: 'field', entityId: crypto.randomUUID(), operation: 'create', version: 1, payload: { categoryId: modalAction.catId, name: val } });
     } else if (modalAction.type === 'editField') {
-      // inline edit
       const field = fields.find((f) => f.id === modalAction.fieldId);
       if (field) {
         field.name = val;
-        // trigger re-render via store
         useHealthStore.setState((s) => ({ fields: s.fields.map((f) => f.id === field.id ? { ...f, name: val } : f) }));
         syncService.enqueueChange({ entityType: 'field', entityId: modalAction.fieldId, operation: 'update', version: field.version + 1, payload: { name: val } });
       }
@@ -114,35 +107,18 @@ export function SettingsPage() {
     closeModal();
   };
 
-  // 删除分类
-  const deleteCat = async (catId: string) => {
-    const now = new Date().toISOString();
-    // 软删除分类及其所有字段
-    await Promise.all([
-      ...fields.filter((f) => f.categoryId === catId).map((f) => deleteField(f.id)),
-    ]);
-    // 从 store 移除
-    useHealthStore.setState((s) => ({
-      categories: s.categories.filter((c) => c.id !== catId),
-    }));
-  };
-
-  // 删除字段
   const handleDeleteField = async (id: string) => {
     await deleteField(id);
   };
 
-  // 删除习惯
   const handleDeleteHabit = async (id: string) => {
     await deleteHabit(id);
   };
 
-  // 手动同步
   const handleSync = () => {
     syncService.sync();
   };
 
-  // 登出
   const handleLogout = () => {
     useAuthStore.getState().clearAuth();
     navigate('/');
@@ -150,7 +126,7 @@ export function SettingsPage() {
 
   return (
     <>
-      <div className="screen active" id="s-settings">
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
         <div className="hdr-white">
           <div className="title">设置</div>
         </div>
@@ -158,38 +134,32 @@ export function SettingsPage() {
         <div className="sbody">
           {/* 健康记录项目 */}
           <div className="set-section">健康记录项目</div>
-          <div id="health-fields-settings">
-            {categories.map((cat) => (
-              <div className="set-group" key={cat.id}>
-                <div className="set-parent">
-                  <div className="set-parent-label">
-                    <div className="cat-dot" style={{ background: cat.color }} />
-                    {cat.name}
-                  </div>
+          {categories.map((cat) => (
+            <div className="set-group" key={cat.id}>
+              <div className="set-parent">
+                <div className="set-parent-label">
+                  <div className="cat-dot" style={{ background: cat.color }} />
+                  {cat.name}
+                </div>
+                <div>
+                  <button className="ic-btn" onClick={() => openModal('新增字段', { type: 'addField', catId: cat.id })}>+</button>
+                  <button className="ic-btn" onClick={() => useHealthStore.setState((s) => ({
+                    categories: s.categories.filter((c) => c.id !== cat.id),
+                    fields: s.fields.filter((f) => f.categoryId !== cat.id),
+                  }))}>⌫</button>
+                </div>
+              </div>
+              {fields.filter((f) => f.categoryId === cat.id).map((f) => (
+                <div className="set-child" key={f.id}>
+                  <span className="set-child-name">{f.name}</span>
                   <div>
-                    <button className="ic-btn" onClick={() => openModal('新增字段', { type: 'addField', catId: cat.id })}>+</button>
-                    <button className="ic-btn" onClick={() => deleteCat(cat.id)}>⌫</button>
+                    <button className="ic-btn" onClick={() => openModal('编辑字段', { type: 'editField', catId: cat.id, fieldId: f.id, currentName: f.name })}>✎</button>
+                    <button className="ic-btn" onClick={() => handleDeleteField(f.id)}>⌫</button>
                   </div>
                 </div>
-                {fields
-                  .filter((f) => f.categoryId === cat.id)
-                  .map((f) => (
-                    <div className="set-child" key={f.id}>
-                      <span className="set-child-name">{f.name}</span>
-                      <div>
-                        <button
-                          className="ic-btn"
-                          onClick={() => openModal('编辑字段', { type: 'editField', catId: cat.id, fieldId: f.id, currentName: f.name })}
-                        >
-                          ✎
-                        </button>
-                        <button className="ic-btn" onClick={() => handleDeleteField(f.id)}>⌫</button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ))}
           <button className="add-btn" onClick={() => openModal('新增一级分类', { type: 'addCat' })}>
             + 新增一级分类
           </button>

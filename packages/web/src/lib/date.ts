@@ -53,16 +53,31 @@ export function getWeekRange(year: number, week: number): { start: Date; end: Da
 }
 
 /**
- * 获取本周（当前选中周）的日期范围
+ * 从 weekLabel ('W1 04/01-04/07') 提取真正的 weekKey
+ */
+export function weekLabelToKey(label: string): string {
+  const parts = label.split(' ');
+  if (!parts[1]) return getWeekKey();
+  const range = parts[1].split('-');
+  const startStr = range[0] ?? '01/01';
+  const [month, day] = startStr.split('/').map(Number);
+  const year = new Date().getFullYear();
+  const d = new Date(year, (month ?? 1) - 1, day ?? 1);
+  return getWeekKey(d);
+}
+
+/**
+ * 获取本周的日期范围
  */
 export function getCurrentWeekRange(weekLabel: string): { start: Date; end: Date } {
   const parts = weekLabel.split(' ')[1]?.split('-') ?? ['01/01', '01/07'];
-  const [startStr, endStr] = parts;
-  const [sm, sd] = startStr.split('/').map(Number);
-  const [em, ed] = endStr.split('/').map(Number);
+  const startStr = parts[0] ?? '01/01';
+  const endStr = parts[1] ?? '01/07';
+  const [sm, sd] = (startStr).split('/').map(Number);
+  const [em, ed] = (endStr).split('/').map(Number);
   const year = new Date().getFullYear();
   return {
-    start: new Date(year, sm - 1, sd),
-    end: new Date(year, em - 1, ed),
+    start: new Date(year, (sm ?? 1) - 1, sd ?? 1),
+    end: new Date(year, (em ?? 1) - 1, ed ?? 1),
   };
 }

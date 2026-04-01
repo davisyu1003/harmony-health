@@ -2,15 +2,12 @@
   "name": "harmony-health",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspace=packages/web",
-    "dev:api": "npm run dev --workspace=packages/api",
-    "build": "npm run build --workspace=packages/web && npm run build --workspace=packages/api",
-    "test": "npm run test --workspaces",
-    "lint": "npm run lint --workspaces"
+    "dev": "npm run dev --prefix packages/web",
+    "build": "npm run build --prefix packages/web",
+    "test": "npm run test --prefix packages/web",
+    "lint": "npm run lint --prefix packages/web",
+    "install:all": "npm install --prefix packages/web && npm install --prefix packages/api"
   },
   "engines": {
     "node": ">=20.0.0"

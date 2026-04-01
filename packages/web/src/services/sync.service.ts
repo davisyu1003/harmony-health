@@ -4,7 +4,6 @@
 
 import { db } from '@/db/schema';
 import { useAuthStore } from '@/stores/auth.store';
-import { useHealthStore } from '@/stores/health.store';
 import type { SyncChange, SyncRequest, SyncResponse } from '@/types/api';
 import { ApiError } from '@/types/api';
 
@@ -53,9 +52,9 @@ class SyncService {
         deviceId: getDeviceId(),
         lastSyncAt,
         changes: pending.map((p) => ({
-          entityType: p.entityType,
+          entityType: p.entityType as SyncChange["entityType"],
           entityId: p.entityId,
-          operation: p.operation,
+          operation: p.operation as SyncChange["operation"],
           version: 1,
           payload: p.payload,
           timestamp: p.timestamp,

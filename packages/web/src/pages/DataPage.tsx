@@ -2,7 +2,7 @@
 // 数据中心页
 // ============================================================
 
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Chart,
@@ -15,7 +15,6 @@ import {
   Legend,
 } from 'chart.js';
 import { useHealthStore } from '@/stores/health.store';
-import type { DBHealthRecord } from '@/db/schema';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -62,11 +61,8 @@ export function DataPage() {
 
     const labels = weeks.map((w) => w.split(' ')[0]);
     const data = weeks.map((_, i) => {
-      const wk = weeks[i];
       // 从 weekLabel 提取 weekKey
-      const weekNum = parseInt(wk.split('W')[1]?.charAt(0) ?? (5 - i).toString());
-      const idx = 4 - i;
-      const weekMeta = weeklyMeta.get(`2026-W${(idx + 1).toString().padStart(2, '0')}`);
+      const weekMeta = weeklyMeta.get(`2026-W${((4 - i) + 1).toString().padStart(2, '0')}`);
       if (!weekMeta || !weekMeta.weight || !weekMeta.height) return null;
       const w = parseFloat(weekMeta.weight.toString());
       const h = parseFloat(weekMeta.height.toString());
@@ -128,18 +124,16 @@ export function DataPage() {
       // 只渲染前两个字段
       const fieldCharts = catFields.slice(0, 2).map((f) => {
         const vals = weeks.map((_, i) => {
-          const idx = 4 - i;
-          const weekKey = `2026-W${(idx + 1).toString().padStart(2, '0')}`;
           const recs = allRecords.filter((r) => r.fieldId === f.id && !r.deletedAt);
           const rec = recs.find((r) => {
-            const rIdx = 4 - (weeks.findIndex((w) => w.includes(`W${5 - i}`)));
             return r.recordWeek === (5 - i) && r.recordYear === 2026;
           });
           return rec?.value ?? null;
         });
 
         const validVals = vals.filter((v): v is number => v !== null);
-        const improving = validVals.length >= 2 && validVals[validVals.length - 1] <= validVals[0];
+        const improving = validVals.length >= 2 &&
+          (validVals[validVals.length - 1] ?? 0) <= (validVals[0] ?? 0);
         const color = improving ? '#2E7D52' : '#E24B4A';
 
         const chartDiv = document.createElement('div');
@@ -175,7 +169,7 @@ export function DataPage() {
 
       // 创建 Chart
       fieldCharts.forEach(({ f, vals, color }) => {
-        const el = document.getElementById(`hc-${f.id}`);
+        const el = document.getElementById(`hc-${f.id}`) as unknown as HTMLCanvasElement;
         if (!el) return;
         const ch = new Chart(el, {
           type: 'line',

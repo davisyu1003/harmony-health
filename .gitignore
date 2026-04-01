@@ -43,3 +43,4 @@ packages/api/prisma/migrations/
 *.local
 .vercel
 .netlify
+packages/web/package-lock.json

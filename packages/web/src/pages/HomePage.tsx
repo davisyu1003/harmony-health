@@ -2,7 +2,7 @@
 // 首页
 // ============================================================
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Chart,
@@ -13,14 +13,12 @@ import {
   Filler,
   Tooltip,
 } from 'chart.js';
-import { useHealthStore, getWeekKeyFromLabel } from '@/stores/health.store';
+import { useHealthStore } from '@/stores/health.store';
 import { useAuthStore } from '@/stores/auth.store';
-import { SCORE_LABELS, PILL_CLASSES, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
+import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
 import { syncService } from '@/services/sync.service';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
-
-const SCORE_COLORS = ['#C4A090', '#2E7D52', '#E67E00', '#CC5500', '#C0392B'];
 
 interface ToastState {
   message: string;
@@ -37,7 +35,6 @@ export function HomePage() {
     categories,
     fields,
     habits,
-    habitLogs,
     weeks,
     currentWeekIndex,
     setCurrentWeek,
@@ -51,11 +48,10 @@ export function HomePage() {
     isLoading,
   } = useHealthStore();
 
-  // 当前选中周
-  const weekLabel = weeks[currentWeekIndex] ?? '';
   const weekKey = getCurrentWeekKey();
   const records = getRecordsByWeek(weekKey);
   const meta = getMetaByWeek(weekKey);
+  const { user } = useAuthStore();
 
   // 导航
   const navTo = (name: 'home' | 'data' | 'settings') => {
@@ -87,138 +83,184 @@ export function HomePage() {
     return { bar: '#C0392B', bg: '#FDEAEA', fg: '#C0392B', txt: '肥胖' };
   };
 
-  // 体重/身高变更
+  // 体重变更
   const handleWeightChange = async (weight: string) => {
-    const currentMeta = meta ?? {
-      id: crypto.randomUUID(),
-      userId: useAuthStore.getState().user?.id ?? 'local',
+    const parts = weekKey.split('-W');
+    const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
+    const weekNum = parseInt(parts[1] ?? '1');
+    const existingMeta = meta;
+    const id = existingMeta?.id ?? crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const updatedMeta = {
+      id,
+      userId: user?.id ?? 'local',
       weekKey,
-      year: parseInt(weekKey.split('-')[0] ?? new Date().getFullYear().toString()),
-      weekNumber: parseInt(weekKey.split('-W')[1] ?? '1'),
-      weight: null,
-      height: null,
-      note: '',
-      version: 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      year,
+      weekNumber: weekNum,
+      weight: parseFloat(weight) || null,
+      height: existingMeta?.height ?? null,
+      note: existingMeta?.note ?? '',
+      version: (existingMeta?.version ?? 0) + 1,
+      createdAt: existingMeta?.createdAt ?? now,
+      updatedAt: now,
       updatedBy: 'local',
+      deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
-    await upsertWeeklyMeta({
-      ...currentMeta,
-      weight: parseFloat(weight) || null,
-      updatedAt: new Date().toISOString(),
-      version: currentMeta.version + 1,
-      syncStatus: 'pending',
+    await upsertWeeklyMeta(updatedMeta);
+    syncService.enqueueChange({
+      entityType: 'weekly_meta',
+      entityId: id,
+      operation: 'update',
+      version: updatedMeta.version,
+      payload: updatedMeta,
     });
-    // 同步
-    syncService.enqueueChange({ entityType: 'weekly_meta', entityId: currentMeta.id, operation: 'update', version: currentMeta.version + 1, payload: { weight } });
   };
 
+  // 身高变更
   const handleHeightChange = async (height: string) => {
-    const currentMeta = meta ?? {
-      id: crypto.randomUUID(),
-      userId: useAuthStore.getState().user?.id ?? 'local',
+    const parts = weekKey.split('-W');
+    const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
+    const weekNum = parseInt(parts[1] ?? '1');
+    const existingMeta = meta;
+    const id = existingMeta?.id ?? crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    const updatedMeta = {
+      id,
+      userId: user?.id ?? 'local',
       weekKey,
-      year: parseInt(weekKey.split('-')[0] ?? new Date().getFullYear().toString()),
-      weekNumber: parseInt(weekKey.split('-W')[1] ?? '1'),
-      weight: null,
-      height: null,
-      note: '',
-      version: 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      year,
+      weekNumber: weekNum,
+      weight: existingMeta?.weight ?? null,
+      height: parseFloat(height) || null,
+      note: existingMeta?.note ?? '',
+      version: (existingMeta?.version ?? 0) + 1,
+      createdAt: existingMeta?.createdAt ?? now,
+      updatedAt: now,
       updatedBy: 'local',
+      deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
-    await upsertWeeklyMeta({
-      ...currentMeta,
-      height: parseFloat(height) || null,
-      updatedAt: new Date().toISOString(),
-      version: currentMeta.version + 1,
-      syncStatus: 'pending',
+    await upsertWeeklyMeta(updatedMeta);
+    syncService.enqueueChange({
+      entityType: 'weekly_meta',
+      entityId: id,
+      operation: 'update',
+      version: updatedMeta.version,
+      payload: updatedMeta,
     });
   };
 
   // 健康评分
-  const handleSetHealth = async (fieldId: string, value: 0 | 1 | 2 | 3 | 4) => {
-    const weekNum = parseInt(weekKey.split('-W')[1] ?? '1');
-    const year = parseInt(weekKey.split('-')[0] ?? new Date().getFullYear().toString());
+  const handleSetHealth = async (fieldId: string, value: 1 | 2 | 3 | 4) => {
+    const parts = weekKey.split('-W');
+    const weekNum = parseInt(parts[1] ?? '1');
+    const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
     const existingRecord = records.find((r) => r.fieldId === fieldId);
     const id = existingRecord?.id ?? crypto.randomUUID();
-    const userId = useAuthStore.getState().user?.id ?? 'local';
-
+    const catId = fields.find((f) => f.id === fieldId)?.categoryId ?? '';
     const newValue = (existingRecord?.value === value ? 0 : value) as 0 | 1 | 2 | 3 | 4;
+    const now = new Date().toISOString();
+    const userId = user?.id ?? 'local';
 
     const record = {
       id,
       userId,
-      categoryId: fields.find((f) => f.id === fieldId)?.categoryId ?? '',
+      categoryId: catId,
       fieldId,
-      recordDate: new Date().toISOString().split('T')[0] ?? '',
+      recordDate: now.split('T')[0] ?? '',
       recordWeek: weekNum,
       recordYear: year,
       value: newValue,
       version: (existingRecord?.version ?? 0) + 1,
-      createdAt: existingRecord?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: existingRecord?.createdAt ?? now,
+      updatedAt: now,
       updatedBy: 'local',
       deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
     await upsertRecord(record);
-    syncService.enqueueChange({ entityType: 'health_record', entityId: id, operation: 'update', version: record.version, payload: record });
+    syncService.enqueueChange({
+      entityType: 'health_record',
+      entityId: id,
+      operation: 'update',
+      version: record.version,
+      payload: record,
+    });
   };
 
   // 习惯打卡
   const handleSetHabit = async (habitId: string, value: HabitStatusValue) => {
     const currentLog = getHabitLogByWeek(habitId, weekKey);
-    const newStatus = (currentLog?.status === (value === 1 ? 'completed' : 'missed') ? 'none' : (value === 1 ? 'completed' : 'missed')) as HabitStatusValue;
-    if (newStatus === HABIT_STATUS.NONE) return;
+    const prevStatus = currentLog?.status;
+    const prevValue: HabitStatusValue =
+      prevStatus === 'completed' ? HABIT_STATUS.COMPLETED
+      : prevStatus === 'missed' ? HABIT_STATUS.MISSED
+      : HABIT_STATUS.NONE;
+
+    const nextStatus: HabitStatusValue =
+      prevValue === value ? HABIT_STATUS.NONE : value;
+
+    if (nextStatus === HABIT_STATUS.NONE) return;
+
+    const id = currentLog?.id ?? crypto.randomUUID();
+    const now = new Date().toISOString();
+    const userId = user?.id ?? 'local';
 
     const log = {
-      id: currentLog?.id ?? crypto.randomUUID(),
+      id,
       habitId,
-      userId: useAuthStore.getState().user?.id ?? 'local',
-      logDate: new Date().toISOString().split('T')[0] ?? '',
+      userId,
+      logDate: now.split('T')[0] ?? '',
       weekKey,
-      status: newStatus === HABIT_STATUS.COMPLETED ? 'completed' : 'missed',
+      status: (nextStatus === HABIT_STATUS.COMPLETED ? 'completed' : 'missed') as 'completed' | 'missed',
       version: (currentLog?.version ?? 0) + 1,
-      createdAt: currentLog?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: currentLog?.createdAt ?? now,
+      updatedAt: now,
       updatedBy: 'local',
       syncStatus: 'pending' as const,
     };
     await upsertHabitLog(log);
-    syncService.enqueueChange({ entityType: 'habit_log', entityId: log.id, operation: 'update', version: log.version, payload: log });
+    syncService.enqueueChange({
+      entityType: 'habit_log',
+      entityId: id,
+      operation: 'update',
+      version: log.version,
+      payload: log,
+    });
   };
 
   // 保存周备注
   const handleSaveNote = async () => {
     const noteEl = document.getElementById('week-note') as HTMLTextAreaElement;
     const note = noteEl?.value ?? '';
-    const currentMeta = meta ?? {
-      id: crypto.randomUUID(),
-      userId: useAuthStore.getState().user?.id ?? 'local',
+    const parts = weekKey.split('-W');
+    const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
+    const weekNum = parseInt(parts[1] ?? '1');
+    const existingMeta = meta;
+    const id = existingMeta?.id ?? crypto.randomUUID();
+    const now = new Date().toISOString();
+    const userId = user?.id ?? 'local';
+
+    const updatedMeta = {
+      id,
+      userId,
       weekKey,
-      year: parseInt(weekKey.split('-')[0] ?? new Date().getFullYear().toString()),
-      weekNumber: parseInt(weekKey.split('-W')[1] ?? '1'),
-      weight: null,
-      height: null,
-      note: '',
-      version: 1,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      year,
+      weekNumber: weekNum,
+      weight: existingMeta?.weight ?? null,
+      height: existingMeta?.height ?? null,
+      note,
+      version: (existingMeta?.version ?? 0) + 1,
+      createdAt: existingMeta?.createdAt ?? now,
+      updatedAt: now,
       updatedBy: 'local',
+      deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
-    await upsertWeeklyMeta({
-      ...currentMeta,
-      note,
-      updatedAt: new Date().toISOString(),
-      version: currentMeta.version + 1,
-      syncStatus: 'pending',
-    });
+    await upsertWeeklyMeta(updatedMeta);
     showToast('本周记录已保存 ✓');
   };
 
@@ -241,16 +283,15 @@ export function HomePage() {
 
   if (isLoading) {
     return (
-      <div className="screen active" style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--brown-light)', fontSize: 14 }}>加载中...</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, color: 'var(--brown-light)', fontSize: 14 }}>
+        加载中...
       </div>
     );
   }
 
   return (
     <>
-      {/* HOME SCREEN */}
-      <div className="screen active" id="s-home">
+      <div style={{ display: 'flex', flexDirection: 'column', flex: '1', overflowY: 'auto' }}>
         {/* Header */}
         <div className="hdr-coral">
           <div className="brand">小鱼健康</div>
@@ -327,59 +368,56 @@ export function HomePage() {
 
           {/* Health Cards */}
           <div className="sec-label">周健康状态</div>
-          <div id="health-cards">
-            {categories.map((cat) => {
-              const catFields = fields.filter((f) => f.categoryId === cat.id);
-              if (catFields.length === 0) return null;
-              return (
-                <div className="card" key={cat.id}>
-                  <div className="card-header">
-                    <div className="card-title">{cat.name}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color }} />
-                      <span className="chevron open" onClick={(e) => {
-                        const body = e.currentTarget.closest('.card')?.querySelector('.card-body') as HTMLElement;
-                        if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
-                        e.currentTarget.classList.toggle('open');
-                      }}>›</span>
-                    </div>
-                  </div>
-                  <div className="card-body">
-                    {catFields.map((f) => {
-                      const v = getFieldValue(f.id);
-                      return (
-                        <div className="sub-row" key={f.id}>
-                          <div className="sub-name">{f.name}</div>
-                          <div className="pills-row">
-                            {([1, 2, 3, 4] as const).map((n) => {
-                              const ac = v === n;
-                              const cls = ac ? ` np a${n}` : ' np';
-                              return (
-                                <div
-                                  className="pill-item"
-                                  key={n}
-                                  onClick={() => handleSetHealth(f.id, n as 1 | 2 | 3 | 4)}
-                                >
-                                  <div className={cls}>{n}</div>
-                                  <span className={`pill-label ${ac ? `a${n}` : ''}`}>
-                                    {SCORE_LABELS[n]}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
+          {categories.map((cat) => {
+            const catFields = fields.filter((f) => f.categoryId === cat.id);
+            if (catFields.length === 0) return null;
+            return (
+              <div className="card" key={cat.id}>
+                <div className="card-header">
+                  <div className="card-title">{cat.name}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color }} />
+                    <span className="chevron open" onClick={(e) => {
+                      const body = e.currentTarget.closest('.card')?.querySelector('.card-body') as HTMLElement | null;
+                      if (body) body.style.display = body.style.display === 'none' ? '' : 'none';
+                      e.currentTarget.classList.toggle('open');
+                    }}>›</span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+                <div className="card-body">
+                  {catFields.map((f) => {
+                    const v = getFieldValue(f.id);
+                    return (
+                      <div className="sub-row" key={f.id}>
+                        <div className="sub-name">{f.name}</div>
+                        <div className="pills-row">
+                          {([1, 2, 3, 4] as const).map((n) => {
+                            const ac = v === n;
+                            return (
+                              <div
+                                className="pill-item"
+                                key={n}
+                                onClick={() => handleSetHealth(f.id, n)}
+                              >
+                                <div className={`np ${ac ? `a${n}` : ''}`}>{n}</div>
+                                <span className={`pill-label ${ac ? `a${n}` : ''}`}>
+                                  {SCORE_LABELS[n]}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
 
           {/* Habits */}
           <div className="sec-label">养生计划打卡</div>
-          <div className="card" id="habit-card">
+          <div className="card">
             {habits.map((h) => {
               const v = getHabitValue(h.id);
               const completed = v === HABIT_STATUS.COMPLETED;

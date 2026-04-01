@@ -12,7 +12,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@harmony-health/types": "workspace:*",
     "chart.js": "^4.4.7",
     "date-fns": "^4.1.0",
     "dexie": "^4.0.11",

@@ -3,7 +3,6 @@
 // ============================================================
 
 import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { db } from '@/db/schema';
 import type {
@@ -14,20 +13,19 @@ import type {
   DBHabit,
   DBHabitLog,
 } from '@/db/schema';
-import { getWeekKey, getISOWeek, getISOYear } from '@/lib/date';
 
 // ============================================================
 // 默认健康分类（v1 参考）
 // ============================================================
 
-export const DEFAULT_CATEGORIES: Omit<DBHealthCategory, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'syncStatus'>[] = [
-  { name: '精力与睡眠', color: '#1D9E75', sortOrder: 0, deletedAt: undefined },
-  { name: '神经与情绪', color: '#7F77DD', sortOrder: 1, deletedAt: undefined },
-  { name: '消化与代谢', color: '#BA7517', sortOrder: 2, deletedAt: undefined },
-  { name: '骨骼与肌肉', color: '#D4537E', sortOrder: 3, deletedAt: undefined },
+export const DEFAULT_CATEGORIES: Array<{ name: string; color: string; sortOrder: number }> = [
+  { name: '精力与睡眠', color: '#1D9E75', sortOrder: 0 },
+  { name: '神经与情绪', color: '#7F77DD', sortOrder: 1 },
+  { name: '消化与代谢', color: '#BA7517', sortOrder: 2 },
+  { name: '骨骼与肌肉', color: '#D4537E', sortOrder: 3 },
 ];
 
-export const DEFAULT_FIELDS: Omit<DBHealthField, 'id' | 'createdAt' | 'sortOrder' | 'version' | 'syncStatus' | 'deletedAt'>[] = [
+export const DEFAULT_FIELDS: Array<{ categoryId: string; name: string }> = [
   // 精力与睡眠
   { categoryId: 'c1', name: '起床/午睡困难' },
   { categoryId: 'c1', name: '头脑昏沉' },
@@ -55,15 +53,15 @@ export const DEFAULT_FIELDS: Omit<DBHealthField, 'id' | 'createdAt' | 'sortOrder
 interface HealthState {
   categories: DBHealthCategory[];
   fields: DBHealthField[];
-  records: Map<string, DBHealthRecord>; // id → record
-  weeklyMeta: Map<string, DBWeeklyMeta>; // weekKey → meta
+  records: Map<string, DBHealthRecord>;
+  weeklyMeta: Map<string, DBWeeklyMeta>;
   habits: DBHabit[];
   habitLogs: DBHabitLog[];
   isLoading: boolean;
-  currentWeekIndex: number; // 0-4
-  weeks: string[]; // W1 W05/01-W05/07 等
+  currentWeekIndex: number;
+  weeks: string[];
+  _initialized: boolean;
 
-  // Actions
   init: () => Promise<void>;
   loadWeeks: () => void;
   setCurrentWeek: (index: number) => void;
@@ -73,7 +71,7 @@ interface HealthState {
   upsertHabit: (habit: DBHabit) => Promise<void>;
   upsertHabitLog: (log: DBHabitLog) => Promise<void>;
   deleteHabit: (id: string) => Promise<void>;
-  addCategory: (cat: Omit<DBHealthCategory, 'id' | 'createdAt' | 'updatedAt' | 'version' | 'syncStatus'>) => Promise<void>;
+  addCategory: (cat: { name: string; color: string; sortOrder: number }) => Promise<void>;
   addField: (catId: string, name: string) => Promise<void>;
   deleteField: (id: string) => Promise<void>;
   getRecordsByWeek: (weekKey: string) => DBHealthRecord[];
@@ -81,11 +79,10 @@ interface HealthState {
   getHabitLogByWeek: (habitId: string, weekKey: string) => DBHabitLog | undefined;
 }
 
-// 近5周的周键列表（与 v1 一致）
 function buildWeeks(): string[] {
   const d = new Date();
   const base = new Date(d);
-  base.setDate(base.getDate() - base.getDay() + 1); // 周一
+  base.setDate(base.getDate() - base.getDay() + 1);
 
   const weeks: string[] = [];
   for (let i = 4; i >= 0; i--) {
@@ -99,19 +96,118 @@ function buildWeeks(): string[] {
   return weeks;
 }
 
-function getCurrentWeekIndex(weeks: string[]): number {
-  return weeks.length - 1; // 默认选中当前周
+function weekLabelToKey(label: string): string {
+  const parts = label.split(' ');
+  if (!parts[1]) return '';
+  const range = (parts[1] ?? '').split('-');
+  const startStr = range[0] ?? '01/01';
+  const [month, day] = startStr.split('/').map(Number);
+  const year = new Date().getFullYear();
+  const d = new Date(year, (month ?? 1) - 1, day ?? 1);
+  const d2 = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  d2.setUTCDate(d2.getUTCDate() + 4 - (d2.getUTCDay() || 7));
+  const isoYear = d2.getUTCFullYear();
+  const isoWeek = Math.ceil(((d2.getTime() - new Date(Date.UTC(isoYear, 0, 1)).getTime()) / 86400000 + 1) / 7);
+  return `${isoYear}-W${isoWeek.toString().padStart(2, '0')}`;
 }
 
-function getWeekKeyFromLabel(label: string): string {
-  // label 格式: "W1 04/01-04/07"
-  const parts = label.split(' ');
-  const weekNum = parseInt(parts[0]?.replace('W', '') ?? '1');
-  const datePart = parts[1]?.split('-')[0] ?? '01/01';
-  const [month, day] = datePart.split('/').map(Number);
-  const year = new Date().getFullYear();
-  const d = new Date(year, month - 1, day);
-  return `${year}-W${weekNum.toString().padStart(2, '0')}`;
+function createDefaultWeeklyMeta(weekKey: string): DBWeeklyMeta {
+  const parts = weekKey.split('-W');
+  const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
+  const weekNum = parseInt(parts[1] ?? '1');
+  return {
+    id: crypto.randomUUID(),
+    userId: 'local',
+    weekKey,
+    year,
+    weekNumber: weekNum,
+    weight: null,
+    height: null,
+    note: '',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'local',
+    syncStatus: 'pending',
+  };
+}
+
+async function initDefaultData(state: HealthState): Promise<void> {
+  const now = new Date().toISOString();
+  const cats: DBHealthCategory[] = [];
+  const flds: DBHealthField[] = [];
+
+  for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+    const catData = DEFAULT_CATEGORIES[i]!;
+    const id = `c${i + 1}`;
+    const cat: DBHealthCategory = {
+      id,
+      name: catData.name,
+      color: catData.color,
+      sortOrder: catData.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      syncStatus: 'synced',
+    };
+    await db.categories.add(cat);
+    cats.push(cat);
+
+    const catFields = DEFAULT_FIELDS.filter((f) => f.categoryId === id);
+    for (let j = 0; j < catFields.length; j++) {
+      const fld = catFields[j]!;
+      const field: DBHealthField = {
+        id: `f${i * 5 + j + 1}`,
+        categoryId: id,
+        name: fld.name,
+        sortOrder: j,
+        createdAt: now,
+        version: 1,
+        syncStatus: 'synced',
+      };
+      await db.fields.add(field);
+      flds.push(field);
+    }
+  }
+
+  // 初始化默认习惯
+  const defaultHabits: Array<{ name: string }> = [
+    { name: '每日冥想 10 分钟' },
+    { name: '戒含糖饮料' },
+    { name: '睡前拉伸 15 分钟' },
+  ];
+  const habits: DBHabit[] = [];
+  for (let i = 0; i < defaultHabits.length; i++) {
+    const h: DBHabit = {
+      id: `h${i + 1}`,
+      userId: 'local',
+      name: defaultHabits[i]!.name,
+      isActive: true,
+      sortOrder: i,
+      createdAt: now,
+      updatedAt: now,
+      version: 1,
+      syncStatus: 'synced',
+    };
+    await db.habits.add(h);
+    habits.push(h);
+  }
+
+  // 初始化本周 meta
+  const weeks = buildWeeks();
+  const currentWeek = weeks[weeks.length - 1] ?? weeks[0];
+  if (currentWeek) {
+    const weekKey = weekLabelToKey(currentWeek);
+    if (weekKey) {
+      const meta = createDefaultWeeklyMeta(weekKey);
+      await db.weeklyMeta.add(meta);
+      state.weeklyMeta.set(weekKey, meta);
+    }
+  }
+
+  state.categories = cats;
+  state.fields = flds;
+  state.habits = habits;
 }
 
 export const useHealthStore = create<HealthState>()(
@@ -126,37 +222,39 @@ export const useHealthStore = create<HealthState>()(
       isLoading: false,
       currentWeekIndex: 4,
       weeks: [],
+      _initialized: false,
 
       init: async () => {
+        if (get()._initialized) return;
         set({ isLoading: true });
         try {
           const [cats, flds, recs, metas, habs, logs] = await Promise.all([
-            db.categories.where('deletedAt').equals('').toArray().catch(() => db.categories.toArray()),
-            db.fields.where('deletedAt').equals('').toArray().catch(() => db.fields.toArray()),
+            db.categories.toArray(),
+            db.fields.toArray(),
             db.healthRecords.toArray(),
             db.weeklyMeta.toArray(),
-            db.habits.where('deletedAt').equals('').toArray().catch(() => db.habits.toArray()),
+            db.habits.toArray(),
             db.habitLogs.toArray(),
           ]);
 
           const weeks = buildWeeks();
-          const currentWeekIndex = getCurrentWeekIndex(weeks);
+          const currentWeekIndex = weeks.length - 1;
 
           set({
-            categories: cats,
-            fields: flds,
+            categories: cats.filter((c) => !c.deletedAt),
+            fields: flds.filter((f) => !f.deletedAt),
             records: new Map(recs.map((r) => [r.id, r])),
             weeklyMeta: new Map(metas.map((m) => [m.weekKey, m])),
-            habits: habs.filter((h) => h.isActive),
+            habits: habs.filter((h) => h.isActive && !h.deletedAt),
             habitLogs: logs,
             weeks,
             currentWeekIndex,
             isLoading: false,
+            _initialized: true,
           });
 
-          // 首次使用：初始化默认分类和字段
           if (cats.length === 0) {
-            await initDefaultData(get);
+            await initDefaultData(get());
           }
         } catch (error) {
           console.error('Failed to init health store:', error);
@@ -166,14 +264,15 @@ export const useHealthStore = create<HealthState>()(
 
       loadWeeks: () => {
         const weeks = buildWeeks();
-        set({ weeks, currentWeekIndex: getCurrentWeekIndex(weeks) });
+        set({ weeks, currentWeekIndex: weeks.length - 1 });
       },
 
       setCurrentWeek: (index) => set({ currentWeekIndex: index }),
 
       getCurrentWeekKey: () => {
         const { weeks, currentWeekIndex } = get();
-        return weeks[currentWeekIndex] ? getWeekKeyFromLabel(weeks[currentWeekIndex]) : '';
+        const label = weeks[currentWeekIndex] ?? '';
+        return weekLabelToKey(label);
       },
 
       upsertRecord: async (record) => {
@@ -226,8 +325,10 @@ export const useHealthStore = create<HealthState>()(
         const id = crypto.randomUUID();
         const now = new Date().toISOString();
         const newCat: DBHealthCategory = {
-          ...cat,
           id,
+          name: cat.name,
+          color: cat.color,
+          sortOrder: cat.sortOrder,
           createdAt: now,
           updatedAt: now,
           version: 1,
@@ -264,8 +365,9 @@ export const useHealthStore = create<HealthState>()(
 
       getRecordsByWeek: (weekKey) => {
         const { records } = get();
-        const weekNum = parseInt(weekKey.split('-W')[1] ?? '1');
-        const year = parseInt(weekKey.split('-')[0] ?? new Date().getFullYear().toString());
+        const parts = weekKey.split('-W');
+        const weekNum = parseInt(parts[1] ?? '1');
+        const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
         return Array.from(records.values()).filter(
           (r) => r.recordWeek === weekNum && r.recordYear === year && !r.deletedAt
         );
@@ -279,7 +381,6 @@ export const useHealthStore = create<HealthState>()(
     {
       name: 'harmony-health',
       storage: createJSONStorage(() => localStorage),
-      // 只持久化元数据，不持久化 records Map（太大，通过 IndexedDB 管理）
       partialize: (state) => ({
         categories: state.categories,
         fields: state.fields,
@@ -290,48 +391,3 @@ export const useHealthStore = create<HealthState>()(
     }
   )
 );
-
-// ============================================================
-// 初始化默认数据
-// ============================================================
-
-async function initDefaultData(get: () => HealthState) {
-  const now = new Date().toISOString();
-
-  // 添加默认分类
-  for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
-    const catData = DEFAULT_CATEGORIES[i];
-    const id = `c${i + 1}`;
-    const cat: DBHealthCategory = {
-      ...catData,
-      id,
-      createdAt: now,
-      updatedAt: now,
-      version: 1,
-      syncStatus: 'synced',
-    };
-    await db.categories.add(cat);
-    get().categories.push(cat);
-
-    // 添加该分类下的字段
-    const catFields = DEFAULT_FIELDS.filter((f) => f.categoryId === id);
-    for (let j = 0; j < catFields.length; j++) {
-      const fld = catFields[j];
-      const fldId = `f${DEFAULT_CATEGORIES.slice(0, i).reduce((s, c) => s + (c === catData ? 0 : 1), 0) + j + 1 + DEFAULT_FIELDS.filter((f) => f.categoryId === catId).indexOf(fld)}`;
-      const fieldId = `f${i * 5 + j + 1}`;
-      const field: DBHealthField = {
-        id: fieldId,
-        categoryId: id,
-        name: fld.name,
-        sortOrder: j,
-        createdAt: now,
-        version: 1,
-        syncStatus: 'synced',
-      };
-      await db.fields.add(field);
-      get().fields.push(field);
-    }
-  }
-}
-
-export { getWeekKeyFromLabel };
