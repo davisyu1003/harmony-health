@@ -5,7 +5,8 @@
   "outputDirectory": "packages/web/dist",
   "installCommand": "echo 'skip root install'",
   "framework": null,
-  "rewrites": [
+  "public": true,
+  "headers": [
     { "source": "/api/(.*)", "destination": "/api/$1" }
   ],
   "headers": [
