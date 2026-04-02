@@ -99,7 +99,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename="/harmony-health">
         <SyncManager />
         <AppShell>
           <Routes>
