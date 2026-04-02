@@ -46,7 +46,6 @@ export function HomePage() {
     weeks,
     currentWeekIndex,
     setCurrentWeek,
-    getCurrentWeekKey,
     weeklyMeta,
     habitLogs,
   } = useHealthStore();
