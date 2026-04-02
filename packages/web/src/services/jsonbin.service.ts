@@ -1,11 +1,9 @@
 // ============================================================
 // JSONBin 云端存储服务
-// API Key: 69c2b4f1b7ec241ddc9bc630
 // 所有用户共用同一个 bin，自动同步
 // ============================================================
 
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
-const API_KEY = '$2a$10$ucgutK6AlkVIxe7BXKDmquTIgmZS7Cea0eSFJy1Ct56pBdzSUW/Oy';
 
 interface JsonBinDoc {
   records: unknown[];
@@ -18,29 +16,57 @@ interface JsonBinDoc {
 }
 
 class JsonBinService {
+  private apiKey: string;
   private binId: string | null = null;
 
-  // 初始化 - 尝试获取或创建 bin
+  constructor() {
+    // JSONBin Master Key
+    this.apiKey = '$2a$10$ucgutK6AlkVIxe7BXKDmquTIgmZS7Cea0eSFJy1Ct56pBdzSUW/Oy';
+  }
+
+  // 初始化 - 获取 bin ID
   async init(): Promise<void> {
-    if (this.binId) return;
+    console.log('JSONBin init start, binId:', this.binId);
     
-    // 先尝试从 localStorage 获取之前创建的 bin ID
-    const savedBinId = localStorage.getItem('jsonbin_bin_id');
-    if (savedBinId) {
-      this.binId = savedBinId;
-      // 验证这个 bin 是否还能访问
-      const isValid = await this.validateBin(this.binId);
-      if (isValid) return;
+    if (this.binId) {
+      console.log('JSONBin: Already has bin ID');
+      return;
     }
-    
-    // 需要创建新 bin 或重新获取
+
+    // 从 localStorage 获取
+    const savedBinId = localStorage.getItem('harmony_bin_id');
+    if (savedBinId) {
+      console.log('JSONBin: Found saved bin ID:', savedBinId);
+      this.binId = savedBinId;
+      
+      // 验证 bin 是否存在
+      const exists = await this.checkBinExists();
+      if (exists) {
+        console.log('JSONBin: Saved bin is valid');
+        return;
+      }
+      console.log('JSONBin: Saved bin no longer exists');
+      this.binId = null;
+    }
+
+    // 尝试获取已存在的 bin
+    const existingBinId = await this.findExistingBin();
+    if (existingBinId) {
+      this.binId = existingBinId;
+      localStorage.setItem('harmony_bin_id', existingBinId);
+      console.log('JSONBin: Found existing bin:', existingBinId);
+      return;
+    }
+
+    // 创建新 bin
     await this.createNewBin();
   }
 
-  private async validateBin(binId: string): Promise<boolean> {
+  private async checkBinExists(): Promise<boolean> {
+    if (!this.binId) return false;
     try {
-      const res = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-        headers: { 'X-Master-Key': API_KEY }
+      const res = await fetch(`${JSONBIN_BASE}/b/${this.binId}/latest`, {
+        headers: { 'X-Master-Key': this.apiKey }
       });
       return res.ok;
     } catch {
@@ -48,7 +74,29 @@ class JsonBinService {
     }
   }
 
+  private async findExistingBin(): Promise<string | null> {
+    try {
+      const res = await fetch(`${JSONBIN_BASE}/b?meta=true`, {
+        headers: { 'X-Master-Key': this.apiKey }
+      });
+      if (!res.ok) return null;
+      
+      const bins = await res.json();
+      // 查找 harmony-health 或 harmony-health-data
+      const ourBin = bins.find?.((b: { name?: string; metadata?: { name?: string; id?: string } }) => 
+        b.name === 'harmony-health' || 
+        b.metadata?.name === 'harmony-health' ||
+        b.name === 'harmony-health-data' ||
+        b.metadata?.name === 'harmony-health-data'
+      );
+      return ourBin?.metadata?.id || null;
+    } catch {
+      return null;
+    }
+  }
+
   private async createNewBin(): Promise<void> {
+    console.log('JSONBin: Creating new bin...');
     try {
       const doc: JsonBinDoc = {
         records: [],
@@ -64,7 +112,7 @@ class JsonBinService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Master-Key': API_KEY,
+          'X-Master-Key': this.apiKey,
           'X-Bin-Name': 'harmony-health',
         },
         body: JSON.stringify(doc),
@@ -73,17 +121,18 @@ class JsonBinService {
       if (res.ok) {
         const result = await res.json();
         this.binId = result.metadata?.id;
-        localStorage.setItem('jsonbin_bin_id', this.binId!);
-        console.log('Created new JSONBin:', this.binId);
+        localStorage.setItem('harmony_bin_id', this.binId!);
+        console.log('JSONBin: Created new bin:', this.binId);
       } else {
-        console.error('JSONBin create failed:', res.status);
+        const text = await res.text();
+        console.error('JSONBin create failed:', res.status, text);
       }
     } catch (error) {
       console.error('JSONBin create error:', error);
     }
   }
 
-  // 保存所有数据到云端
+  // 保存所有数据
   async saveAll(data: {
     records: unknown[];
     habitLogs: unknown[];
@@ -95,7 +144,7 @@ class JsonBinService {
     await this.init();
     
     if (!this.binId) {
-      console.error('JSONBin: No bin ID available');
+      console.error('JSONBin: No bin ID after init, cannot save');
       return false;
     }
 
@@ -109,45 +158,41 @@ class JsonBinService {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-Master-Key': API_KEY,
+          'X-Master-Key': this.apiKey,
         },
         body: JSON.stringify(doc),
       });
 
-      if (!res.ok) {
+      if (res.ok) {
+        console.log('JSONBin: Data saved successfully');
+        return true;
+      } else {
         console.error('JSONBin save failed:', res.status);
         return false;
       }
-
-      console.log('JSONBin: Data saved successfully');
-      return true;
     } catch (error) {
       console.error('JSONBin save error:', error);
       return false;
     }
   }
 
-  // 从云端加载数据
+  // 加载所有数据
   async loadAll(): Promise<JsonBinDoc | null> {
+    console.log('JSONBin: loadAll called, binId:', this.binId);
     await this.init();
     
     if (!this.binId) {
-      console.log('JSONBin: No bin ID yet, skipping load');
+      console.log('JSONBin: No bin ID after init, cannot load');
       return null;
     }
 
     try {
       const res = await fetch(`${JSONBIN_BASE}/b/${this.binId}/latest`, {
-        headers: { 'X-Master-Key': API_KEY }
+        headers: { 'X-Master-Key': this.apiKey }
       });
 
       if (!res.ok) {
-        if (res.status === 404) {
-          console.log('JSONBin: Bin not found, need to create new one');
-          this.binId = null;
-          localStorage.removeItem('jsonbin_bin_id');
-          return null;
-        }
+        console.error('JSONBin load failed:', res.status);
         return null;
       }
 
@@ -163,20 +208,16 @@ class JsonBinService {
 
 // 单例
 let serviceInstance: JsonBinService | null = null;
-let initPromise: Promise<void> | null = null;
 
 export function getJsonBinService(): JsonBinService {
   if (!serviceInstance) {
     serviceInstance = new JsonBinService();
-    initPromise = serviceInstance.init();
   }
   return serviceInstance;
 }
 
-// 初始化并返回 Promise
-export function initJsonBinService(): Promise<void> {
-  getJsonBinService();
-  return initPromise || Promise.resolve();
+export async function initJsonBinService(): Promise<void> {
+  await getJsonBinService().init();
 }
 
 // 防抖自动保存
@@ -194,5 +235,5 @@ export function scheduleAutoSave(data: {
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null;
     getJsonBinService().saveAll(data).catch(e => console.error('AutoSave failed:', e));
-  }, 2000); // 2秒防抖
+  }, 2000);
 }
