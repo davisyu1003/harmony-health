@@ -1,76 +1,51 @@
 // ============================================================
 // JSONBin 云端存储服务
-// API 文档: https://jsonbin.io/api
+// API Key: 69c2b4f1b7ec241ddc9bc630
+// 所有用户共用同一个 bin，自动同步
 // ============================================================
 
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
-const BIN_PREFIX = 'harmony-health-';
+const BIN_ID = '678f8a91ad1ca6778a29bc10'; // 固定的 bin ID
 
 interface JsonBinDoc {
   records: unknown[];
   habitLogs: unknown[];
   weeklyMeta: unknown[];
+  categories: unknown[];
+  fields: unknown[];
+  habits: unknown[];
   lastSync: string;
 }
 
 export class JsonBinService {
   private apiKey: string;
-  private userId: string;
-  private collectionId: string;
+  private binId: string;
 
-  constructor(apiKey: string, userId: string) {
-    this.apiKey = apiKey;
-    this.userId = userId;
-    this.collectionId = `${BIN_PREFIX}${userId}`;
+  constructor() {
+    this.apiKey = '69c2b4f1b7ec241ddc9bc630';
+    this.binId = BIN_ID;
   }
 
-  // 获取集合 bin ID
-  private getCollectionBinId(): string {
-    return `${BIN_PREFIX}meta`;
-  }
-
-  // 获取用户的 collection ID (bin ID)
-  private async getUserBinId(): Promise<string | null> {
-    try {
-      // 先获取 collection 的 bin ID
-      const metaRes = await fetch(`${JSONBIN_BASE}/b/${this.getCollectionBinId()}/latest`, {
-        headers: { 'X-Master-Key': this.apiKey }
-      });
-      if (!metaRes.ok) return null;
-      const meta = await metaRes.json();
-      const collection = meta.record?.collections?.[this.userId];
-      return collection || null;
-    } catch {
-      return null;
-    }
-  }
-
-  // 保存数据到云端
-  async saveData(data: {
-    records?: unknown[];
-    habitLogs?: unknown[];
-    weeklyMeta?: unknown[];
+  // 保存所有数据到云端
+  async saveAll(data: {
+    records: unknown[];
+    habitLogs: unknown[];
+    weeklyMeta: unknown[];
+    categories: unknown[];
+    fields: unknown[];
+    habits: unknown[];
   }): Promise<boolean> {
     try {
-      const existingBinId = await this.getUserBinId();
       const doc: JsonBinDoc = {
-        records: data.records || [],
-        habitLogs: data.habitLogs || [],
-        weeklyMeta: data.weeklyMeta || [],
+        ...data,
         lastSync: new Date().toISOString(),
       };
 
-      const url = existingBinId
-        ? `${JSONBIN_BASE}/b/${existingBinId}`
-        : `${JSONBIN_BASE}/b`;
-
-      const method = existingBinId ? 'PUT' : 'POST';
-      const res = await fetch(url, {
-        method,
+      const res = await fetch(`${JSONBIN_BASE}/b/${this.binId}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'X-Master-Key': this.apiKey,
-          ...(existingBinId ? {} : { 'X-Collection-Name': this.collectionId }),
         },
         body: JSON.stringify(doc),
       });
@@ -80,15 +55,6 @@ export class JsonBinService {
         return false;
       }
 
-      // 如果是新创建，保存 bin ID 到 collection
-      if (!existingBinId) {
-        const result = await res.json();
-        const binId = result.metadata?.id;
-        if (binId) {
-          await this.saveCollectionMapping(binId);
-        }
-      }
-
       return true;
     } catch (error) {
       console.error('JSONBin save error:', error);
@@ -96,55 +62,58 @@ export class JsonBinService {
     }
   }
 
-  // 保存 bin ID 到 collection
-  private async saveCollectionMapping(binId: string): Promise<void> {
+  // 从云端加载数据
+  async loadAll(): Promise<JsonBinDoc | null> {
     try {
-      // 获取或创建 meta bin
-      let metaBinId = this.getCollectionBinId();
-      let meta: Record<string, unknown> = {};
-
-      const metaRes = await fetch(`${JSONBIN_BASE}/b/${metaBinId}/latest`, {
+      const res = await fetch(`${JSONBIN_BASE}/b/${this.binId}/latest`, {
         headers: { 'X-Master-Key': this.apiKey }
       });
 
-      if (metaRes.ok) {
-        const existing = await metaRes.json();
-        meta = existing.record || {};
+      if (!res.ok) {
+        if (res.status === 404) {
+          // Bin 不存在，需要先创建
+          return await this.createBin();
+        }
+        return null;
       }
 
-      // 更新 collections
-      const collections = (meta.collections as Record<string, string>) || {};
-      collections[this.userId] = binId;
-      meta.collections = collections;
-
-      await fetch(`${JSONBIN_BASE}/b/${metaBinId}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Master-Key': this.apiKey,
-        },
-        body: JSON.stringify(meta),
-      });
-    } catch (error) {
-      console.error('Failed to save collection mapping:', error);
-    }
-  }
-
-  // 从云端加载数据
-  async loadData(): Promise<JsonBinDoc | null> {
-    try {
-      const binId = await this.getUserBinId();
-      if (!binId) return null;
-
-      const res = await fetch(`${JSONBIN_BASE}/b/${binId}/latest`, {
-        headers: { 'X-Master-Key': this.apiKey }
-      });
-
-      if (!res.ok) return null;
       const data = await res.json();
       return data.record || null;
     } catch (error) {
       console.error('JSONBin load error:', error);
+      return null;
+    }
+  }
+
+  // 创建新的 bin
+  private async createBin(): Promise<JsonBinDoc | null> {
+    try {
+      const doc: JsonBinDoc = {
+        records: [],
+        habitLogs: [],
+        weeklyMeta: [],
+        categories: [],
+        fields: [],
+        habits: [],
+        lastSync: new Date().toISOString(),
+      };
+
+      const res = await fetch(`${JSONBIN_BASE}/b`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Key': this.apiKey,
+          'X-Bin-Name': 'harmony-health-data',
+        },
+        body: JSON.stringify(doc),
+      });
+
+      if (!res.ok) return null;
+      const result = await res.json();
+      console.log('Created new JSONBin:', result.metadata?.id);
+      return doc;
+    } catch (error) {
+      console.error('JSONBin create error:', error);
       return null;
     }
   }
@@ -153,9 +122,9 @@ export class JsonBinService {
 // 单例
 let serviceInstance: JsonBinService | null = null;
 
-export function getJsonBinService(apiKey: string, userId: string): JsonBinService {
-  if (!serviceInstance || serviceInstance['apiKey'] !== apiKey) {
-    serviceInstance = new JsonBinService(apiKey, userId);
+export function getJsonBinService(): JsonBinService {
+  if (!serviceInstance) {
+    serviceInstance = new JsonBinService();
   }
   return serviceInstance;
 }

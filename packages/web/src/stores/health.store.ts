@@ -66,6 +66,9 @@ interface HealthState {
   init: () => Promise<void>;
   loadWeeks: () => void;
   setCurrentWeek: (index: number) => void;
+  setRecords: (records: Map<string, DBHealthRecord>) => void;
+  setWeeklyMeta: (weeklyMeta: Map<string, DBWeeklyMeta>) => void;
+  setHabitLogs: (habitLogs: DBHabitLog[]) => void;
   getCurrentWeekKey: () => string;
   upsertRecord: (record: DBHealthRecord) => Promise<void>;
   upsertWeeklyMeta: (meta: DBWeeklyMeta) => Promise<void>;
@@ -358,6 +361,10 @@ export const useHealthStore = create<HealthState>()(
       },
 
       setCurrentWeek: (index) => set({ currentWeekIndex: index }),
+
+      setRecords: (records) => set({ records }),
+      setWeeklyMeta: (weeklyMeta) => set({ weeklyMeta }),
+      setHabitLogs: (habitLogs) => set({ habitLogs }),
 
       getCurrentWeekKey: () => {
         const { weeks, currentWeekIndex } = get();
