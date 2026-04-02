@@ -2,7 +2,7 @@
 // 首页
 // ============================================================
 
-import { useRef, useState, useCallback, useReducer } from 'react';
+import { useRef, useState, useCallback, useReducer, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
@@ -17,7 +17,7 @@ import { useHealthStore } from '@/stores/health.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
 import { syncService } from '@/services/sync.service';
-import { getWeekKey } from '@/lib/date';
+import { getWeekKey, isWeekCurrent } from '@/lib/date';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -27,7 +27,6 @@ interface ToastState {
 }
 
 export function HomePage() {
-  console.log('HomePage render at', Date.now());
   const navigate = useNavigate();
   const location = useLocation();
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
@@ -50,13 +49,37 @@ export function HomePage() {
     habitLogs,
   } = useHealthStore();
 
-  const weekKey = getWeekKey();  // 直接用 ISO 格式，如 '2026-W14'
-  console.log('weekKey:', weekKey);
+  const weekKey = getWeekKey();
+  const weekStripRef = useRef<HTMLDivElement>(null);
   const allRecords = useHealthStore((s) => s.records);
   const upsertRecord = useHealthStore((s) => s.upsertRecord);
   const upsertWeeklyMeta = useHealthStore((s) => s.upsertWeeklyMeta);
   const upsertHabitLog = useHealthStore((s) => s.upsertHabitLog);
   const isLoading = useHealthStore((s) => s.isLoading);
+
+  // 滚动到本周
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const strip = weekStripRef.current;
+      if (!strip) return;
+      const buttons = strip.querySelectorAll('.wtab');
+      const currentBtn = buttons[currentWeekIndex] as HTMLButtonElement | undefined;
+      if (currentBtn) {
+        currentBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [currentWeekIndex]);
+
+  // 切换上一周
+  const goToPrevWeek = () => {
+    if (currentWeekIndex > 0) setCurrentWeek(currentWeekIndex - 1);
+  };
+
+  // 切换下一周
+  const goToNextWeek = () => {
+    if (currentWeekIndex < weeks.length - 1) setCurrentWeek(currentWeekIndex + 1);
+  };
 
   // 本周记录
   const parts = weekKey.split('-W');
@@ -173,16 +196,13 @@ export function HomePage() {
 
   // 健康评分
   const handleSetHealth = async (fieldId: string, value: 1 | 2 | 3 | 4) => {
-    console.log('handleSetHealth called', fieldId, value);
     const parts = weekKey.split('-W');
     const weekNum = parseInt(parts[1] ?? '1');
     const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
     const existingRecord = records.find((r) => r.fieldId === fieldId);
-    console.log('existingRecord:', existingRecord, 'weekNum:', weekNum, 'year:', year);
     const id = existingRecord?.id ?? crypto.randomUUID();
     const catId = fields.find((f) => f.id === fieldId)?.categoryId ?? '';
     const newValue = (existingRecord?.value === value ? 0 : value) as 0 | 1 | 2 | 3 | 4;
-    console.log('newValue:', newValue);
     const now = new Date().toISOString();
     const userId = user?.id ?? 'local';
 
@@ -202,9 +222,7 @@ export function HomePage() {
       deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
-    console.log('upserting record:', record);
     await upsertRecord(record);
-    console.log('upsertRecord done, forcing update');
     forceUpdate();
     syncService.enqueueChange({
       entityType: 'health_record',
@@ -323,21 +341,57 @@ export function HomePage() {
           <div className="sub">Hello，今天你变好了么？</div>
         </div>
 
-        {/* Week Strip */}
-        <div className="week-strip">
-          {weeks.map((w, i) => {
-            const isThisWeek = i === currentWeekIndex;
-            const label = isThisWeek ? `本周 ${w}` : w;
-            return (
-              <button
-                key={w}
-                className={`wtab ${isThisWeek ? 'on' : ''}`}
-                onClick={() => setCurrentWeek(i)}
-              >
-                {label}
-              </button>
-            );
-          })}
+        {/* Week Strip with Navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 0', background: 'var(--bg)' }}>
+          <button
+            onClick={goToPrevWeek}
+            disabled={currentWeekIndex === 0}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              border: 'none', background: currentWeekIndex === 0 ? '#f0f0f0' : 'var(--coral)',
+              color: currentWeekIndex === 0 ? '#999' : '#fff',
+              cursor: currentWeekIndex === 0 ? 'not-allowed' : 'pointer',
+              fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, marginLeft: 8
+            }}
+          >‹</button>
+
+          <div
+            ref={weekStripRef}
+            style={{
+              display: 'flex', gap: 8, overflowX: 'auto', flex: 1,
+              scrollBehavior: 'smooth', scrollSnapType: 'x mandatory',
+              padding: '0 4px', WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            {weeks.map((w, i) => {
+              const isThisWeek = isWeekCurrent(w);
+              const label = isThisWeek ? `本周 ${w}` : w;
+              return (
+                <button
+                  key={w}
+                  className={`wtab ${i === currentWeekIndex ? 'on' : ''}`}
+                  onClick={() => setCurrentWeek(i)}
+                  style={{ scrollSnapAlign: 'start', flexShrink: 0 }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={goToNextWeek}
+            disabled={currentWeekIndex === weeks.length - 1}
+            style={{
+              width: 32, height: 32, borderRadius: '50%',
+              border: 'none', background: currentWeekIndex === weeks.length - 1 ? '#f0f0f0' : 'var(--coral)',
+              color: currentWeekIndex === weeks.length - 1 ? '#999' : '#fff',
+              cursor: currentWeekIndex === weeks.length - 1 ? 'not-allowed' : 'pointer',
+              fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, marginRight: 8
+            }}
+          >›</button>
         </div>
 
         <div className="sbody">

@@ -91,7 +91,7 @@ function buildWeeks(): string[] {
   const firstMonday = new Date(jan1);
   firstMonday.setDate(jan1.getDate() + daysToMonday);
 
-  // Find this week's Monday
+  // Find this week's Monday (used to find current week index)
   const today = new Date(now);
   const todayDayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
   const daysToPrevMonday = 1 - todayDayOfWeek;
@@ -101,14 +101,21 @@ function buildWeeks(): string[] {
   const weeks: string[] = [];
   const fmt = (n: number) => n.toString().padStart(2, '0');
 
-  for (let i = 4; i >= 0; i--) {
-    const monday = new Date(currentWeekMonday);
-    monday.setDate(monday.getDate() - 7 * i);
+  // Generate ~52 weeks from first Monday of year
+  const startOfYearMonday = new Date(firstMonday);
+  
+  for (let i = 0; i < 52; i++) {
+    const monday = new Date(startOfYearMonday);
+    monday.setDate(startOfYearMonday.getDate() + 7 * i);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    const daysDiff = Math.floor((monday.getTime() - firstMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
-    const weekNum = Math.floor(daysDiff / 7) + 1;
+    // Skip weeks that are completely in the previous year
+    if (sunday.getFullYear() < currentYear) continue;
+    // Skip weeks that are completely in the next year (week 53+)
+    if (monday.getFullYear() > currentYear) break;
+
+    const weekNum = i + 1;
 
     weeks.push(`W${weekNum} ${fmt(monday.getMonth() + 1)}/${fmt(monday.getDate())}–${fmt(sunday.getMonth() + 1)}/${fmt(sunday.getDate())}`);
   }
@@ -116,39 +123,82 @@ function buildWeeks(): string[] {
   return weeks;
 }
 
-function weekLabelToKey(label: string): string {
-  // Label format: "W14 03/30-04/05"
+// Check if a week label is "this week" based on actual date
+function isCurrentWeekLabel(label: string): boolean {
+  const today = new Date();
+  const todayDayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
+  const daysToPrevMonday = 1 - todayDayOfWeek;
+  const currentWeekMonday = new Date(today);
+  currentWeekMonday.setDate(today.getDate() + daysToPrevMonday);
+
   const parts = label.split(' ');
-  if (!parts[0] || !parts[1]) return getWeekKey();
-  
-  const weekMatch = parts[0].match(/W(\d+)/);
-  if (!weekMatch || !weekMatch[1]) return getWeekKey();
-  
-  if (!parts[1]) return getWeekKey();
+  if (!parts[1]) return false;
   const range = parts[1].split('–');
-  if (!range[0]) return getWeekKey();
+  const startStr = range[0];
+  if (!startStr) return false;
   
-  const dateParts = range[0].split('/');
-  if (!dateParts[0] || !dateParts[1]) return getWeekKey();
+  const dateParts = startStr.split('/');
+  const m1Str = dateParts[0];
+  const d1Str = dateParts[1];
+  if (!m1Str || !d1Str) return false;
   
-  const month = parseInt(dateParts[0]);
-  const day = parseInt(dateParts[1]);
+  const m1 = parseInt(m1Str);
+  const d1 = parseInt(d1Str);
+  
+  // Determine year - handle year boundary
+  let year = today.getFullYear();
+  if (m1 === 12 && d1 >= 29) {
+    const mondayOfLabel = new Date(year, m1 - 1, d1);
+    if (today < mondayOfLabel) year = year + 1;
+  }
+  
+  const labelMonday = new Date(year, m1 - 1, d1);
+  const diff = Math.abs(currentWeekMonday.getTime() - labelMonday.getTime());
+  return diff < 3 * 24 * 60 * 60 * 1000; // within 3 days
+}
+
+// Find the index of "this week" in the weeks array
+function findCurrentWeekIndex(weeks: string[]): number {
+  for (let i = 0; i < weeks.length; i++) {
+    const weekLabel = weeks[i];
+    if (weekLabel && isCurrentWeekLabel(weekLabel)) {
+      return i;
+    }
+  }
+  return weeks.length - 1; // fallback to last week
+}
+
+function weekLabelToKey(label: string): string {
+  const part0 = label.split(' ')[0];
+  const part1 = label.split(' ')[1];
+  if (!part0 || !part1) return getWeekKey();
+  
+  const weekMatch = part0.match(/W(\d+)/);
+  if (!weekMatch) return getWeekKey();
+  const weekNumStr = weekMatch[1];
+  if (!weekNumStr) return getWeekKey();
+  
+  const range0 = part1.split('–')[0];
+  if (!range0) return getWeekKey();
+  
+  const monthStr = range0.split('/')[0];
+  const dayStr = range0.split('/')[1];
+  if (!monthStr || !dayStr) return getWeekKey();
+  
+  const month = parseInt(monthStr);
+  const day = parseInt(dayStr);
   if (isNaN(month) || isNaN(day)) return getWeekKey();
   
   let year = new Date().getFullYear();
-  
-  // If Monday is in December and day >= 29, might be week 1 of next year
   if (month === 12 && day >= 29) {
     const mondayOfLabel = new Date(year, month - 1, day);
-    const today = new Date();
-    if (today < mondayOfLabel) {
-      year = year + 1;
-    }
+    if (new Date() < mondayOfLabel) year = year + 1;
   }
   
   const mondayDate = new Date(year, month - 1, day);
   return getWeekKey(mondayDate);
 }
+
 
 function createDefaultWeeklyMeta(weekKey: string): DBWeeklyMeta {
   const parts = weekKey.split('-W');
@@ -303,7 +353,8 @@ export const useHealthStore = create<HealthState>()(
 
       loadWeeks: () => {
         const weeks = buildWeeks();
-        set({ weeks, currentWeekIndex: weeks.length - 1 });
+        const currentIndex = findCurrentWeekIndex(weeks);
+        set({ weeks, currentWeekIndex: currentIndex });
       },
 
       setCurrentWeek: (index) => set({ currentWeekIndex: index }),

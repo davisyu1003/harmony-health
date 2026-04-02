@@ -81,3 +81,37 @@ export function getCurrentWeekRange(weekLabel: string): { start: Date; end: Date
     end: new Date(year, (em ?? 1) - 1, ed ?? 1),
   };
 }
+
+// Check if a week label (e.g. "W14 03/30-04/05") is the current week
+export function isWeekCurrent(label: string): boolean {
+  const today = new Date();
+  const todayDayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
+  const daysToPrevMonday = 1 - todayDayOfWeek;
+  const currentWeekMonday = new Date(today);
+  currentWeekMonday.setDate(today.getDate() + daysToPrevMonday);
+
+  const parts = label.split(' ');
+  if (!parts[1]) return false;
+  const range = parts[1].split('–');
+  const startStr = range[0];
+  if (!startStr) return false;
+
+  const dateParts = startStr.split('/');
+  const m1Str = dateParts[0];
+  const d1Str = dateParts[1];
+  if (!m1Str || !d1Str) return false;
+  
+  const m1 = parseInt(m1Str);
+  const d1 = parseInt(d1Str);
+  
+  // Determine year - handle year boundary
+  let year = today.getFullYear();
+  if (m1 === 12 && d1 >= 29) {
+    const mondayOfLabel = new Date(year, m1 - 1, d1);
+    if (today < mondayOfLabel) year = year + 1;
+  }
+  
+  const labelMonday = new Date(year, m1 - 1, d1);
+  const diff = Math.abs(currentWeekMonday.getTime() - labelMonday.getTime());
+  return diff < 3 * 24 * 60 * 60 * 1000; // within 3 days
+}
