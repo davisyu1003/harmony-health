@@ -18,6 +18,7 @@ import { useAuthStore } from '@/stores/auth.store';
 import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
 import { syncService } from '@/services/sync.service';
 import { getWeekKey, isWeekCurrent, weekLabelToWeekKey } from '@/lib/date';
+import { scheduleAutoSave } from '@/services/jsonbin.service';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -138,6 +139,16 @@ export function HomePage() {
       syncStatus: 'pending' as const,
     };
     await upsertWeeklyMeta(updatedMeta);
+    // 自动同步到云端
+    const { records, weeklyMeta, habitLogs, categories, fields, habits } = useHealthStore.getState();
+    scheduleAutoSave({
+      records: Array.from(records.values()),
+      weeklyMeta: Array.from(weeklyMeta.values()),
+      habitLogs,
+      categories,
+      fields,
+      habits,
+    });
     syncService.enqueueChange({
       entityType: 'weekly_meta',
       entityId: id,
@@ -173,6 +184,16 @@ export function HomePage() {
       syncStatus: 'pending' as const,
     };
     await upsertWeeklyMeta(updatedMeta);
+    // 自动同步到云端
+    const { records: r2, weeklyMeta: w2, habitLogs: h2, categories: c2, fields: f2, habits: h3 } = useHealthStore.getState();
+    scheduleAutoSave({
+      records: Array.from(r2.values()),
+      weeklyMeta: Array.from(w2.values()),
+      habitLogs: h2,
+      categories: c2,
+      fields: f2,
+      habits: h3,
+    });
     syncService.enqueueChange({
       entityType: 'weekly_meta',
       entityId: id,
@@ -212,6 +233,16 @@ export function HomePage() {
     };
     await upsertRecord(record);
     forceUpdate();
+    // 自动同步到云端
+    const storeState = useHealthStore.getState();
+    scheduleAutoSave({
+      records: Array.from(storeState.records.values()),
+      weeklyMeta: Array.from(storeState.weeklyMeta.values()),
+      habitLogs: storeState.habitLogs,
+      categories: storeState.categories,
+      fields: storeState.fields,
+      habits: storeState.habits,
+    });
     syncService.enqueueChange({
       entityType: 'health_record',
       entityId: id,
@@ -253,6 +284,16 @@ export function HomePage() {
       syncStatus: 'pending' as const,
     };
     await upsertHabitLog(log);
+    // 自动同步到云端
+    const storeState2 = useHealthStore.getState();
+    scheduleAutoSave({
+      records: Array.from(storeState2.records.values()),
+      weeklyMeta: Array.from(storeState2.weeklyMeta.values()),
+      habitLogs: storeState2.habitLogs,
+      categories: storeState2.categories,
+      fields: storeState2.fields,
+      habits: storeState2.habits,
+    });
     syncService.enqueueChange({
       entityType: 'habit_log',
       entityId: id,
@@ -291,6 +332,16 @@ export function HomePage() {
       syncStatus: 'pending' as const,
     };
     await upsertWeeklyMeta(updatedMeta);
+    // 自动同步到云端
+    const storeState3 = useHealthStore.getState();
+    scheduleAutoSave({
+      records: Array.from(storeState3.records.values()),
+      weeklyMeta: Array.from(storeState3.weeklyMeta.values()),
+      habitLogs: storeState3.habitLogs,
+      categories: storeState3.categories,
+      fields: storeState3.fields,
+      habits: storeState3.habits,
+    });
     showToast('本周记录已保存 ✓');
   };
 

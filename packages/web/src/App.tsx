@@ -3,9 +3,11 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHealthStore } from '@/stores/health.store';
 import { syncService } from '@/services/sync.service';
+import { initJsonBinService, getJsonBinService } from '@/services/jsonbin.service';
 import { HomePage } from '@/pages/HomePage';
 import { DataPage } from '@/pages/DataPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import type { DBHealthRecord, DBWeeklyMeta, DBHabitLog } from '@/db/schema';
 import './styles/globals.css';
 
 const queryClient = new QueryClient({
@@ -58,9 +60,30 @@ function SyncManager() {
 }
 
 export default function App() {
-  // 初始化健康数据
+  // 初始化健康数据并自动从云端加载
   useEffect(() => {
-    useHealthStore.getState().init();
+    useHealthStore.getState().init().then(() => {
+      // 初始化完成后，自动从 JSONBin 加载云端数据
+      initJsonBinService().then(() => {
+        getJsonBinService().loadAll().then((data) => {
+          if (data) {
+            const store = useHealthStore.getState();
+            if (data.records?.length) {
+              const map = new Map<string, DBHealthRecord>((data.records as DBHealthRecord[]).map(r => [r.id, r]));
+              store.setRecords(map);
+            }
+            if (data.habitLogs?.length) {
+              store.setHabitLogs(data.habitLogs as DBHabitLog[]);
+            }
+            if (data.weeklyMeta?.length) {
+              const map = new Map<string, DBWeeklyMeta>((data.weeklyMeta as DBWeeklyMeta[]).map(m => [m.weekKey, m]));
+              store.setWeeklyMeta(map);
+            }
+            console.log('JSONBin: Loaded cloud data on startup');
+          }
+        });
+      });
+    });
   }, []);
 
   return (
