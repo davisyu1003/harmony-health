@@ -9,7 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icons/*.png'],
+      includeAssets: ['favicon.svg', 'icons/*.png'],
       manifest: {
         name: '小鱼健康',
         short_name: '小鱼健康',
@@ -18,31 +18,61 @@ export default defineConfig({
         background_color: '#FDFAF7',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/?source=pwa',
-        scope: '/',
+        start_url: '/harmony-health/?source=pwa',
+        scope: '/harmony-health/',
         lang: 'zh-CN',
         categories: ['health', 'medical', 'fitness'],
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-        ],
-        shortcuts: [
-          { name: '记录健康数据', short_name: '记录', url: '/record/new', description: '快速添加一条健康记录' },
-          { name: '今日概览', short_name: '今日', url: '/dashboard', description: '查看今日健康数据' },
+          { src: 'icons/icon-72.png', sizes: '72x72', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-96.png', sizes: '96x96', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-144.png', sizes: '144x144', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-152.png', sizes: '152x152', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-384.png', sizes: '384x384', type: 'image/png', purpose: 'any' },
         ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // 离线页面
+        navigateFallback: 'index.html',
+        // 缓存策略
         runtimeCaching: [
+          // JS/CSS 静态资源 - CacheFirst
+          {
+            urlPattern: /\.(?:js|css|woff2)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'static-cache',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 }, // 30天
+            },
+          },
+          // 图片资源 - CacheFirst
+          {
+            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|ico)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'image-cache',
+              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 365 }, // 1年
+            },
+          },
+          // Google Fonts - StaleWhileRevalidate
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
+          // cdnjs CDN - CacheFirst
           {
             urlPattern: /^https:\/\/cdnjs\.cloudflare\.com\/.*/i,
             handler: 'CacheFirst',
-            options: { cacheName: 'cdn-cache', expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 365 } },
-          },
-          {
-            urlPattern: /\/api\//i,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api-cache', networkTimeoutSeconds: 10 },
+            options: {
+              cacheName: 'cdn-cache',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
           },
         ],
       },
@@ -55,6 +85,17 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://localhost:3001', changeOrigin: true },
+    },
+  },
+  build: {
+    // 优化代码分割
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          charts: ['chart.js'],
+        },
+      },
     },
   },
 });
