@@ -36,12 +36,11 @@ body {
   margin: 0;
 }
 
-/* Phone Frame - only show on desktop, not on mobile */
+/* Phone Frame - full screen on mobile */
 .phone {
   width: 100%;
-  max-width: 430px; /* iPhone 15 Pro Max width */
   background: var(--bg);
-  border-radius: 0; /* No rounded corners on mobile */
+  border-radius: 0;
   border: none;
   overflow: hidden;
   display: flex;
@@ -54,14 +53,13 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Screens */
+/* Screens - fill available space */
 .screen {
   display: none;
   flex: 1;
   flex-direction: column;
   overflow-y: auto;
-  /* Ensure content doesn't get hidden behind bottom nav on mobile */
-  padding-bottom: calc(100px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
 }
 .screen.active {
   display: flex;
@@ -374,21 +372,24 @@ body {
   margin-bottom: 100px;
 }
 
-/* Bottom Nav */
+/* Bottom Nav - Fixed at bottom of screen */
 .bottom-nav {
   display: flex;
   background: var(--bg);
   border-top: 0.5px solid var(--border);
   flex-shrink: 0;
   padding: 6px 0;
-  /* Fix to bottom of phone frame */
-  position: absolute;
+  /* Fix to bottom of viewport on mobile */
+  position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   /* Safe area for iPhone home indicator */
   padding-bottom: calc(6px + env(safe-area-inset-bottom));
-  z-index: 100;
+  z-index: 1000;
+  /* Full width on mobile */
+  width: 100%;
+  max-width: 100%;
 }
 .bnav {
   flex: 1;

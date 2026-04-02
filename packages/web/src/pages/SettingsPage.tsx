@@ -126,7 +126,7 @@ export function SettingsPage() {
   };
 
   return (
-    <>
+    <div className="screen active" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: '100%' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto' }}>
         <div className="hdr-white">
           <div className="title">设置</div>
@@ -269,6 +269,25 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {/* Modal */}
+      <div className={`modal-overlay ${modalOpen ? 'open' : ''}`} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
+        <div className="modal">
+          <h3>{modalTitle}</h3>
+          <input
+            ref={modalInputRef}
+            type="text"
+            placeholder="请输入名称"
+            value={modalValue}
+            onChange={(e) => setModalValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') confirmModal(); }}
+          />
+          <div className="modal-btns">
+            <button className="btn-cancel" onClick={closeModal}>取消</button>
+            <button className="btn-confirm" onClick={confirmModal}>确定</button>
+          </div>
+        </div>
+      </div>
+
       {/* Bottom Nav */}
       <div className="bottom-nav">
         <button className={`bnav ${activeNav === 'home' ? 'on' : ''}`} onClick={() => navTo('home')}>
@@ -291,25 +310,6 @@ export function SettingsPage() {
           <span>设置</span>
         </button>
       </div>
-
-      {/* Modal */}
-      <div className={`modal-overlay ${modalOpen ? 'open' : ''}`} onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}>
-        <div className="modal">
-          <h3>{modalTitle}</h3>
-          <input
-            ref={modalInputRef}
-            type="text"
-            placeholder="请输入名称"
-            value={modalValue}
-            onChange={(e) => setModalValue(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') confirmModal(); }}
-          />
-          <div className="modal-btns">
-            <button className="btn-cancel" onClick={closeModal}>取消</button>
-            <button className="btn-confirm" onClick={confirmModal}>确定</button>
-          </div>
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
