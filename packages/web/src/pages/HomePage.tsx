@@ -333,7 +333,7 @@ export function HomePage() {
           <div className="bmi-card">
             <div className="bmi-inputs">
               <div className="bmi-field">
-                <label>体重 KG</label>
+                <label htmlFor="inp-weight">体重 KG</label>
                 <input
                   type="number"
                   id="inp-weight"
@@ -344,7 +344,7 @@ export function HomePage() {
                 />
               </div>
               <div className="bmi-field">
-                <label>身高 CM</label>
+                <label htmlFor="inp-height">身高 CM</label>
                 <input
                   type="number"
                   id="inp-height"
