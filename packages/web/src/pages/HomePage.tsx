@@ -26,6 +26,7 @@ interface ToastState {
 }
 
 export function HomePage() {
+  console.log('HomePage render at', Date.now());
   const navigate = useNavigate();
   const location = useLocation();
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
@@ -50,6 +51,7 @@ export function HomePage() {
   } = useHealthStore();
 
   const weekKey = getCurrentWeekKey();
+  console.log('weekKey:', weekKey, 'weeks:', weeks, 'currentWeekIndex:', currentWeekIndex);
   const allRecords = useHealthStore((s) => s.records);
   const upsertRecord = useHealthStore((s) => s.upsertRecord);
   const upsertWeeklyMeta = useHealthStore((s) => s.upsertWeeklyMeta);
