@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHealthStore } from '@/stores/health.store';
 import { syncService } from '@/services/sync.service';
 import { initJsonBinService, getJsonBinService } from '@/services/jsonbin.service';
+import { appState } from '@/lib/appState';
 import { HomePage } from '@/pages/HomePage';
 import { DataPage } from '@/pages/DataPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -60,7 +61,7 @@ function SyncManager() {
 }
 
 export default function App() {
-  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // 初始化健康数据并自动从云端加载
   useEffect(() => {
@@ -81,25 +82,19 @@ export default function App() {
               const map = new Map<string, DBWeeklyMeta>((data.weeklyMeta as DBWeeklyMeta[]).map(m => [m.weekKey, m]));
               store.setWeeklyMeta(map);
             }
-            console.log('JSONBin: Loaded cloud data on startup, triggering re-render');
-            // 强制触发重新渲染
-            setCloudLoaded(true);
-          } else {
-            setCloudLoaded(true);
+            console.log('JSONBin: Loaded cloud data on startup');
+            appState.setCloudDataLoaded(true);
           }
+          setIsLoading(false);
         }).catch(() => {
-          setCloudLoaded(true);
+          setIsLoading(false);
         });
       });
     });
   }, []);
 
-  if (!cloudLoaded) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#C8694A', color: '#fff' }}>
-        正在加载数据...
-      </div>
-    );
+  if (isLoading) {
+    return null; // Toast 会由其他组件显示，暂时先返回 null
   }
 
   return (

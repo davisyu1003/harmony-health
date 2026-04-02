@@ -2,7 +2,7 @@
 // 首页
 // ============================================================
 
-import { useRef, useState, useCallback, useReducer } from 'react';
+import { useRef, useState, useCallback, useReducer, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
@@ -19,6 +19,7 @@ import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/healt
 import { syncService } from '@/services/sync.service';
 import { getWeekKey, isWeekCurrent, weekLabelToWeekKey } from '@/lib/date';
 import { scheduleAutoSave } from '@/services/jsonbin.service';
+import { appState } from '@/lib/appState';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -30,8 +31,26 @@ interface ToastState {
 export function HomePage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
+  const [toast, setToast] = useState<ToastState>({ message: '正在加载云端数据...', visible: true });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+
+  // 监听云端数据加载完成
+  useEffect(() => {
+    const handleCloudLoaded = (e: Event) => {
+      const event = e as CustomEvent<{ loaded: boolean }>;
+      if (event.detail.loaded) {
+        setCloudLoaded(true);
+        setToast({ message: '云端数据已加载 ✓', visible: true });
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => {
+          setToast({ message: '', visible: false });
+        }, 2000);
+      }
+    };
+    window.addEventListener('cloudDataLoaded', handleCloudLoaded);
+    return () => window.removeEventListener('cloudDataLoaded', handleCloudLoaded);
+  }, []);
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   // 根据当前路径确定 activeNav
