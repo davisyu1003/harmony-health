@@ -327,7 +327,7 @@ export const useHealthStore = create<HealthState>()(
           ]);
 
           const weeks = buildWeeks();
-          const currentWeekIndex = weeks.length - 1;
+          const currentWeekIndex = findCurrentWeekIndex(weeks);
 
           set({
             categories: cats.filter((c) => !c.deletedAt),

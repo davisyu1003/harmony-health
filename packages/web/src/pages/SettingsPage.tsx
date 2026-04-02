@@ -132,6 +132,73 @@ export function SettingsPage() {
         </div>
 
         <div className="sbody">
+          {/* 云端同步 */}
+          <div className="set-section">云端同步</div>
+          <div className="set-group" style={{ padding: '12px' }}>
+            <div style={{ fontSize: 12, color: 'var(--brown-mid)', marginBottom: 8 }}>
+              使用 JSONBin.io 实现多设备同步
+            </div>
+            <input
+              type="text"
+              placeholder="粘贴 JSONBin API Key"
+              id="jsonbin-key"
+              defaultValue={localStorage.getItem('jsonbin_key') || ''}
+              style={{
+                width: '100%', padding: '10px 12px', border: '1px solid var(--border)',
+                borderRadius: 8, fontSize: 13, boxSizing: 'border-box', marginBottom: 8
+              }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={async () => {
+                  const keyInput = document.getElementById('jsonbin-key') as HTMLInputElement;
+                  const apiKey = keyInput?.value?.trim();
+                  if (!apiKey) { alert('请输入 API Key'); return; }
+                  localStorage.setItem('jsonbin_key', apiKey);
+                  const { getJsonBinService } = await import('@/services/jsonbin.service');
+                  const userId = localStorage.getItem('user_id') || 'local';
+                  const service = getJsonBinService(apiKey, userId);
+                  const data = await service.loadData();
+                  if (data) {
+                    alert(`同步成功！最后同步: ${data.lastSync}`);
+                  } else {
+                    alert('同步成功！暂无云端数据。');
+                  }
+                }}
+                style={{
+                  flex: 1, padding: '8px 12px', background: 'var(--coral)', color: '#fff',
+                  border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer'
+                }}
+              >同步云端数据 ↓</button>
+              <button
+                onClick={async () => {
+                  const keyInput = document.getElementById('jsonbin-key') as HTMLInputElement;
+                  const apiKey = keyInput?.value?.trim();
+                  if (!apiKey) { alert('请输入 API Key'); return; }
+                  const { getJsonBinService } = await import('@/services/jsonbin.service');
+                  const userId = localStorage.getItem('user_id') || 'local';
+                  const service = getJsonBinService(apiKey, userId);
+                  const { records, weeklyMeta, habitLogs } = useHealthStore.getState();
+                  const ok = await service.saveData({
+                    records: Array.from(records.values()) as unknown[],
+                    weeklyMeta: Array.from(weeklyMeta.values()) as unknown[],
+                    habitLogs: habitLogs as unknown[],
+                  });
+                  alert(ok ? '上传成功！' : '上传失败');
+                }}
+                style={{
+                  flex: 1, padding: '8px 12px', background: '#2E7D52', color: '#fff',
+                  border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer'
+                }}
+              >上传到云端 ↑</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--brown-light)', marginTop: 8 }}>
+              1. 访问 <span style={{ color: 'var(--coral)' }}>https://jsonbin.io</span> 注册账号<br/>
+              2. 创建 API Key 并粘贴上方<br/>
+              3. 点击"上传到云端"保存数据
+            </div>
+          </div>
+
           {/* 健康记录项目 */}
           <div className="set-section">健康记录项目</div>
           {categories.map((cat) => (
