@@ -115,3 +115,35 @@ export function isWeekCurrent(label: string): boolean {
   const diff = Math.abs(currentWeekMonday.getTime() - labelMonday.getTime());
   return diff < 3 * 24 * 60 * 60 * 1000; // within 3 days
 }
+
+// Convert week label (e.g. "W14 03/30-04/05") to ISO week key (e.g. "2026-W14")
+export function weekLabelToWeekKey(label: string): string {
+  const part0 = label.split(' ')[0];
+  const part1 = label.split(' ')[1];
+  if (!part0 || !part1) return getWeekKey();
+  
+  const weekMatch = part0.match(/W(\d+)/);
+  if (!weekMatch) return getWeekKey();
+  const weekNumStr = weekMatch[1];
+  if (!weekNumStr) return getWeekKey();
+  
+  const range0 = part1.split('–')[0];
+  if (!range0) return getWeekKey();
+  
+  const monthStr = range0.split('/')[0];
+  const dayStr = range0.split('/')[1];
+  if (!monthStr || !dayStr) return getWeekKey();
+  
+  const month = parseInt(monthStr);
+  const day = parseInt(dayStr);
+  if (isNaN(month) || isNaN(day)) return getWeekKey();
+  
+  let year = new Date().getFullYear();
+  if (month === 12 && day >= 29) {
+    const mondayOfLabel = new Date(year, month - 1, day);
+    if (new Date() < mondayOfLabel) year = year + 1;
+  }
+  
+  const mondayDate = new Date(year, month - 1, day);
+  return getWeekKey(mondayDate);
+}

@@ -2,7 +2,7 @@
 // 首页
 // ============================================================
 
-import { useRef, useState, useCallback, useReducer, useEffect } from 'react';
+import { useRef, useState, useCallback, useReducer } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
@@ -17,7 +17,7 @@ import { useHealthStore } from '@/stores/health.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
 import { syncService } from '@/services/sync.service';
-import { getWeekKey, isWeekCurrent } from '@/lib/date';
+import { getWeekKey, isWeekCurrent, weekLabelToWeekKey } from '@/lib/date';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -49,27 +49,15 @@ export function HomePage() {
     habitLogs,
   } = useHealthStore();
 
-  const weekKey = getWeekKey();
-  const weekStripRef = useRef<HTMLDivElement>(null);
+  const weekKey = currentWeekIndex >= 0 && weeks[currentWeekIndex]
+    ? weekLabelToWeekKey(weeks[currentWeekIndex])
+    : getWeekKey();
+  const currentWeekLabel = weeks[currentWeekIndex] ?? '';
   const allRecords = useHealthStore((s) => s.records);
   const upsertRecord = useHealthStore((s) => s.upsertRecord);
   const upsertWeeklyMeta = useHealthStore((s) => s.upsertWeeklyMeta);
   const upsertHabitLog = useHealthStore((s) => s.upsertHabitLog);
   const isLoading = useHealthStore((s) => s.isLoading);
-
-  // 滚动到本周
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const strip = weekStripRef.current;
-      if (!strip) return;
-      const buttons = strip.querySelectorAll('.wtab');
-      const currentBtn = buttons[currentWeekIndex] as HTMLButtonElement | undefined;
-      if (currentBtn) {
-        currentBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-      }
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [currentWeekIndex]);
 
   // 切换上一周
   const goToPrevWeek = () => {
@@ -341,55 +329,35 @@ export function HomePage() {
           <div className="sub">Hello，今天你变好了么？</div>
         </div>
 
-        {/* Week Strip with Navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 0', background: 'var(--bg)' }}>
+        {/* Week Navigation */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px 8px', background: 'var(--bg)', gap: 16 }}>
           <button
             onClick={goToPrevWeek}
             disabled={currentWeekIndex === 0}
             style={{
-              width: 32, height: 32, borderRadius: '50%',
+              width: 36, height: 36, borderRadius: '50%',
               border: 'none', background: currentWeekIndex === 0 ? '#f0f0f0' : 'var(--coral)',
               color: currentWeekIndex === 0 ? '#999' : '#fff',
               cursor: currentWeekIndex === 0 ? 'not-allowed' : 'pointer',
-              fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, marginLeft: 8
+              fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >‹</button>
 
-          <div
-            ref={weekStripRef}
-            style={{
-              display: 'flex', gap: 8, overflowX: 'auto', flex: 1,
-              scrollBehavior: 'smooth', scrollSnapType: 'x mandatory',
-              padding: '0 4px', WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            {weeks.map((w, i) => {
-              const isThisWeek = isWeekCurrent(w);
-              const label = isThisWeek ? `本周 ${w}` : w;
-              return (
-                <button
-                  key={w}
-                  className={`wtab ${i === currentWeekIndex ? 'on' : ''}`}
-                  onClick={() => setCurrentWeek(i)}
-                  style={{ scrollSnapAlign: 'start', flexShrink: 0 }}
-                >
-                  {label}
-                </button>
-              );
-            })}
+          <div style={{ textAlign: 'center', minWidth: 160 }}>
+            <div style={{ fontSize: 14, color: 'var(--brown-mid)', fontWeight: 500 }}>
+              {isWeekCurrent(currentWeekLabel) ? '本周' : ''} {currentWeekLabel}
+            </div>
           </div>
 
           <button
             onClick={goToNextWeek}
             disabled={currentWeekIndex === weeks.length - 1}
             style={{
-              width: 32, height: 32, borderRadius: '50%',
+              width: 36, height: 36, borderRadius: '50%',
               border: 'none', background: currentWeekIndex === weeks.length - 1 ? '#f0f0f0' : 'var(--coral)',
               color: currentWeekIndex === weeks.length - 1 ? '#999' : '#fff',
               cursor: currentWeekIndex === weeks.length - 1 ? 'not-allowed' : 'pointer',
-              fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0, marginRight: 8
+              fontSize: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >›</button>
         </div>
