@@ -17,6 +17,7 @@ import { useHealthStore } from '@/stores/health.store';
 import { useAuthStore } from '@/stores/auth.store';
 import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/health-record';
 import { syncService } from '@/services/sync.service';
+import { getWeekKey } from '@/lib/date';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -50,8 +51,8 @@ export function HomePage() {
     habitLogs,
   } = useHealthStore();
 
-  const weekKey = getCurrentWeekKey();
-  console.log('weekKey:', weekKey, 'weeks:', weeks, 'currentWeekIndex:', currentWeekIndex);
+  const weekKey = getWeekKey();  // 直接用 ISO 格式，如 '2026-W14'
+  console.log('weekKey:', weekKey);
   const allRecords = useHealthStore((s) => s.records);
   const upsertRecord = useHealthStore((s) => s.upsertRecord);
   const upsertWeeklyMeta = useHealthStore((s) => s.upsertWeeklyMeta);
