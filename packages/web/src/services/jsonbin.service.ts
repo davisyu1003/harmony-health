@@ -95,6 +95,8 @@ class JsonBinService {
     fields: unknown[];
     habits: unknown[];
   }): Promise<boolean> {
+    console.log('saveAll called, records:', data.records?.length, 'binId:', this.binId);
+    
     // 如果没有 bin ID，先创建
     if (!this.binId) {
       console.log('JSONBin: No bin ID, creating new bin...');
@@ -202,9 +204,11 @@ export function scheduleAutoSave(data: {
   fields: unknown[];
   habits: unknown[];
 }): void {
+  console.log('scheduleAutoSave called, records count:', data.records?.length);
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null;
+    console.log('Executing auto-save to cloud...');
     getJsonBinService().saveAll(data).catch(e => console.error('AutoSave failed:', e));
   }, 2000);
 }
