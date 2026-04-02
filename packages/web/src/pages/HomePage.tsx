@@ -172,14 +172,15 @@ export function HomePage() {
   // 健康评分
   const handleSetHealth = async (fieldId: string, value: 1 | 2 | 3 | 4) => {
     console.log('handleSetHealth called', fieldId, value);
-    alert(`handleSetHealth: fieldId=${fieldId} value=${value}`);
     const parts = weekKey.split('-W');
     const weekNum = parseInt(parts[1] ?? '1');
     const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
     const existingRecord = records.find((r) => r.fieldId === fieldId);
+    console.log('existingRecord:', existingRecord, 'weekNum:', weekNum, 'year:', year);
     const id = existingRecord?.id ?? crypto.randomUUID();
     const catId = fields.find((f) => f.id === fieldId)?.categoryId ?? '';
     const newValue = (existingRecord?.value === value ? 0 : value) as 0 | 1 | 2 | 3 | 4;
+    console.log('newValue:', newValue);
     const now = new Date().toISOString();
     const userId = user?.id ?? 'local';
 
@@ -199,7 +200,9 @@ export function HomePage() {
       deletedAt: undefined,
       syncStatus: 'pending' as const,
     };
+    console.log('upserting record:', record);
     await upsertRecord(record);
+    console.log('upsertRecord done, forcing update');
     forceUpdate();
     syncService.enqueueChange({
       entityType: 'health_record',
@@ -416,7 +419,7 @@ export function HomePage() {
                               <div
                                 className="pill-item"
                                 key={n}
-                                onClick={() => { alert(`点击了 field=${f.id} value=${n}`); handleSetHealth(f.id, n); }}
+                                onClick={() => handleSetHealth(f.id, n)}
                               >
                                 <div className={`np ${ac ? `a${n}` : ''}`}>{n}</div>
                                 <span className={`pill-label ${ac ? `a${n}` : ''}`}>
