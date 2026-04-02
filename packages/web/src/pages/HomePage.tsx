@@ -19,7 +19,6 @@ import { SCORE_LABELS, HABIT_STATUS, type HabitStatusValue } from '@/types/healt
 import { syncService } from '@/services/sync.service';
 import { getWeekKey, isWeekCurrent, weekLabelToWeekKey } from '@/lib/date';
 import { scheduleAutoSave } from '@/services/jsonbin.service';
-import { appState } from '@/lib/appState';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip);
 
@@ -33,14 +32,12 @@ export function HomePage() {
   const location = useLocation();
   const [toast, setToast] = useState<ToastState>({ message: '正在加载云端数据...', visible: true });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
 
   // 监听云端数据加载完成
   useEffect(() => {
     const handleCloudLoaded = (e: Event) => {
       const event = e as CustomEvent<{ loaded: boolean }>;
       if (event.detail.loaded) {
-        setCloudLoaded(true);
         setToast({ message: '云端数据已加载 ✓', visible: true });
         if (toastTimer.current) clearTimeout(toastTimer.current);
         toastTimer.current = setTimeout(() => {
