@@ -171,6 +171,8 @@ export function HomePage() {
 
   // 健康评分
   const handleSetHealth = async (fieldId: string, value: 1 | 2 | 3 | 4) => {
+    console.log('handleSetHealth called', fieldId, value);
+    alert(`handleSetHealth: fieldId=${fieldId} value=${value}`);
     const parts = weekKey.split('-W');
     const weekNum = parseInt(parts[1] ?? '1');
     const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
@@ -414,7 +416,7 @@ export function HomePage() {
                               <div
                                 className="pill-item"
                                 key={n}
-                                onClick={() => handleSetHealth(f.id, n)}
+                                onClick={() => { alert(`点击了 field=${f.id} value=${n}`); handleSetHealth(f.id, n); }}
                               >
                                 <div className={`np ${ac ? `a${n}` : ''}`}>{n}</div>
                                 <span className={`pill-label ${ac ? `a${n}` : ''}`}>
