@@ -408,12 +408,11 @@ export function HomePage() {
                         <div className="pills-row">
                           {([1, 2, 3, 4] as const).map((n) => {
                             const ac = v === n;
-                            console.log(`field ${f.id} value ${v} n=${n} ac=${ac}`);
                             return (
                               <div
                                 className="pill-item"
                                 key={n}
-                                onClick={() => { console.log('clicked', f.id, n); handleSetHealth(f.id, n); }}
+                                onClick={() => handleSetHealth(f.id, n)}
                               >
                                 <div className={`np ${ac ? `a${n}` : ''}`}>{n}</div>
                                 <span className={`pill-label ${ac ? `a${n}` : ''}`}>
