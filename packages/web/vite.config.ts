@@ -23,8 +23,8 @@ export default defineConfig({
         lang: 'zh-CN',
         categories: ['health', 'medical', 'fitness'],
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
         shortcuts: [
           { name: '记录健康数据', short_name: '记录', url: '/record/new', description: '快速添加一条健康记录' },
