@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { db } from '@/db/schema';
+import { getWeekKey } from '@/lib/date';
 import type {
   DBHealthCategory,
   DBHealthField,
@@ -80,35 +81,73 @@ interface HealthState {
 }
 
 function buildWeeks(): string[] {
-  const d = new Date();
-  const base = new Date(d);
-  base.setDate(base.getDate() - base.getDay() + 1);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  // Find first Monday of year (ISO week starts on Monday)
+  const jan1 = new Date(currentYear, 0, 1);
+  const dayOfWeek = jan1.getDay();
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const firstMonday = new Date(jan1);
+  firstMonday.setDate(jan1.getDate() + daysToMonday);
+
+  // Find this week's Monday
+  const today = new Date(now);
+  const todayDayOfWeek = today.getDay() === 0 ? 7 : today.getDay();
+  const daysToPrevMonday = 1 - todayDayOfWeek;
+  const currentWeekMonday = new Date(today);
+  currentWeekMonday.setDate(today.getDate() + daysToPrevMonday);
 
   const weeks: string[] = [];
+  const fmt = (n: number) => n.toString().padStart(2, '0');
+
   for (let i = 4; i >= 0; i--) {
-    const start = new Date(base);
-    start.setDate(start.getDate() - 7 * i);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-    const fmt = (n: number) => n.toString().padStart(2, '0');
-    weeks.push(`W${5 - i} ${fmt(start.getMonth() + 1)}/${fmt(start.getDate())}–${fmt(end.getMonth() + 1)}/${fmt(end.getDate())}`);
+    const monday = new Date(currentWeekMonday);
+    monday.setDate(monday.getDate() - 7 * i);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const daysDiff = Math.floor((monday.getTime() - firstMonday.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const weekNum = Math.floor(daysDiff / 7) + 1;
+
+    weeks.push(`W${weekNum} ${fmt(monday.getMonth() + 1)}/${fmt(monday.getDate())}–${fmt(sunday.getMonth() + 1)}/${fmt(sunday.getDate())}`);
   }
+
   return weeks;
 }
 
 function weekLabelToKey(label: string): string {
+  // Label format: "W14 03/30-04/05"
   const parts = label.split(' ');
-  if (!parts[1]) return '';
-  const range = (parts[1] ?? '').split('-');
-  const startStr = range[0] ?? '01/01';
-  const [month, day] = startStr.split('/').map(Number);
-  const year = new Date().getFullYear();
-  const d = new Date(year, (month ?? 1) - 1, day ?? 1);
-  const d2 = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-  d2.setUTCDate(d2.getUTCDate() + 4 - (d2.getUTCDay() || 7));
-  const isoYear = d2.getUTCFullYear();
-  const isoWeek = Math.ceil(((d2.getTime() - new Date(Date.UTC(isoYear, 0, 1)).getTime()) / 86400000 + 1) / 7);
-  return `${isoYear}-W${isoWeek.toString().padStart(2, '0')}`;
+  if (!parts[0] || !parts[1]) return getWeekKey();
+  
+  const weekMatch = parts[0].match(/W(\d+)/);
+  if (!weekMatch || !weekMatch[1]) return getWeekKey();
+  
+  if (!parts[1]) return getWeekKey();
+  const range = parts[1].split('–');
+  if (!range[0]) return getWeekKey();
+  
+  const dateParts = range[0].split('/');
+  if (!dateParts[0] || !dateParts[1]) return getWeekKey();
+  
+  const month = parseInt(dateParts[0]);
+  const day = parseInt(dateParts[1]);
+  if (isNaN(month) || isNaN(day)) return getWeekKey();
+  
+  let year = new Date().getFullYear();
+  
+  // If Monday is in December and day >= 29, might be week 1 of next year
+  if (month === 12 && day >= 29) {
+    const mondayOfLabel = new Date(year, month - 1, day);
+    const today = new Date();
+    if (today < mondayOfLabel) {
+      year = year + 1;
+    }
+  }
+  
+  const mondayDate = new Date(year, month - 1, day);
+  return getWeekKey(mondayDate);
 }
 
 function createDefaultWeeklyMeta(weekKey: string): DBWeeklyMeta {

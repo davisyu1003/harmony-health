@@ -325,15 +325,19 @@ export function HomePage() {
 
         {/* Week Strip */}
         <div className="week-strip">
-          {weeks.map((w, i) => (
-            <button
-              key={w}
-              className={`wtab ${i === currentWeekIndex ? 'on' : ''}`}
-              onClick={() => setCurrentWeek(i)}
-            >
-              {w}
-            </button>
-          ))}
+          {weeks.map((w, i) => {
+            const isThisWeek = i === currentWeekIndex;
+            const label = isThisWeek ? `本周 ${w}` : w;
+            return (
+              <button
+                key={w}
+                className={`wtab ${isThisWeek ? 'on' : ''}`}
+                onClick={() => setCurrentWeek(i)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="sbody">
