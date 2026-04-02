@@ -5,7 +5,7 @@
 // ============================================================
 
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
-const API_KEY = '69c2b4f1b7ec241ddc9bc630';
+const API_KEY = '$2a$10$ucgutK6AlkVIxe7BXKDmquTIgmZS7Cea0eSFJy1Ct56pBdzSUW/Oy';
 
 interface JsonBinDoc {
   records: unknown[];
