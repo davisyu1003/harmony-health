@@ -44,19 +44,30 @@ export function HomePage() {
     currentWeekIndex,
     setCurrentWeek,
     getCurrentWeekKey,
-    getRecordsByWeek,
-    getMetaByWeek,
-    getHabitLogByWeek,
-    upsertRecord,
-    upsertWeeklyMeta,
-    upsertHabitLog,
-    isLoading,
+    weeklyMeta,
+    habitLogs,
   } = useHealthStore();
 
   const weekKey = getCurrentWeekKey();
-  const records = getRecordsByWeek(weekKey);
-  const meta = getMetaByWeek(weekKey);
+  const allRecords = useHealthStore((s) => s.records);
+  const upsertRecord = useHealthStore((s) => s.upsertRecord);
+  const upsertWeeklyMeta = useHealthStore((s) => s.upsertWeeklyMeta);
+  const upsertHabitLog = useHealthStore((s) => s.upsertHabitLog);
+  const isLoading = useHealthStore((s) => s.isLoading);
+
+  // 本周记录
+  const parts = weekKey.split('-W');
+  const weekNum = parseInt(parts[1] ?? '1');
+  const year = parseInt(parts[0] ?? new Date().getFullYear().toString());
+  const records = Array.from(allRecords.values()).filter(
+    (r) => r.recordWeek === weekNum && r.recordYear === year && !r.deletedAt
+  );
+  const meta = weeklyMeta.get(weekKey);
   const { user } = useAuthStore();
+
+  // 获取某习惯打卡状态
+  const getHabitLogByWeek = (habitId: string, wk: string) =>
+    habitLogs.find((l) => l.habitId === habitId && l.weekKey === wk);
 
   // 导航
   const navTo = (name: 'home' | 'data' | 'settings') => {

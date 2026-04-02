@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
   CategoryScale,
@@ -20,12 +20,8 @@ Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, To
 
 export function DataPage() {
   const navigate = useNavigate();
-  const [activeNav, setActiveNav] = useState<'home' | 'data' | 'settings'>('data');
-  const [dataTab, setDataTab] = useState<'month' | 'year'>('month');
-  const [month, setMonth] = useState(() => {
-    const d = new Date();
-    return { y: d.getFullYear(), m: d.getMonth() + 1 };
-  });
+  const location = useLocation();
+  const [dataTab, setDataTab] = useState<'week' | 'month' | 'year'>('week');
 
   const bmiChartRef = useRef<HTMLCanvasElement | null>(null);
   const bmiChartInstance = useRef<Chart | null>(null);
@@ -33,23 +29,69 @@ export function DataPage() {
 
   const { categories, fields, records, weeklyMeta, weeks, habits, habitLogs } = useHealthStore();
 
-  const navTo = (name: 'home' | 'data' | 'settings') => {
-    setActiveNav(name);
-    navigate(`/${name === 'home' ? '' : name}`);
-  };
+  // Determine active nav from URL
+  const activeNav = location.pathname === '/settings' ? 'settings' 
+    : location.pathname === '/data' ? 'data' 
+    : 'home';
 
-  const changeMonth = (d: number) => {
-    setMonth((prev) => {
-      let m = prev.m + d;
-      let y = prev.y;
-      if (m > 12) { m = 1; y++; }
-      if (m < 1) { m = 12; y--; }
-      return { y, m };
-    });
+  const navTo = (name: 'home' | 'data' | 'settings') => {
+    navigate(`/${name === 'home' ? '' : name}`);
   };
 
   // 获取所有周的数据
   const allRecords = Array.from(records.values());
+
+  // 根据时间范围过滤数据
+  const getFilteredRecords = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentWeek = Math.ceil((now.getDate() + new Date(currentYear, now.getMonth(), 1).getDay()) / 7);
+
+    if (dataTab === 'week') {
+      // 本周数据
+      return allRecords.filter(r => r.recordYear === currentYear && r.recordWeek === currentWeek);
+    } else if (dataTab === 'month') {
+      // 本月数据
+      return allRecords.filter(r => {
+        const d = new Date(r.recordDate);
+        return d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth;
+      });
+    } else {
+      // 本年数据
+      return allRecords.filter(r => r.recordYear === currentYear);
+    }
+  };
+
+  const filteredRecords = getFilteredRecords();
+
+  // 计算每个分类的平均分
+  const categoryStats = categories.map(cat => {
+    const catFields = fields.filter(f => f.categoryId === cat.id);
+    const catRecords = filteredRecords.filter(r => catFields.some(f => f.id === r.fieldId) && r.value > 0);
+    if (catRecords.length === 0) return { ...cat, avg: null, count: 0 };
+    const sum = catRecords.reduce((acc, r) => acc + r.value, 0);
+    const avg = Math.round(sum / catRecords.length * 10) / 10;
+    return { ...cat, avg, count: catRecords.length };
+  });
+
+  // 计算习惯完成率
+  const habitStats = habits.map(h => {
+    let totalDays = 7; // 本周默认7天
+    
+    if (dataTab === 'month') {
+      totalDays = 30;
+    } else if (dataTab === 'year') {
+      totalDays = 365;
+    }
+    
+    const completedLogs = habitLogs.filter(l => 
+      l.habitId === h.id && l.status === 'completed'
+    ).length;
+    
+    const pct = Math.min(100, Math.round(completedLogs / totalDays * 100));
+    return { ...h, pct, completed: completedLogs, total: totalDays };
+  });
 
   // 渲染 BMI 趋势图
   useEffect(() => {
@@ -214,13 +256,9 @@ export function DataPage() {
     };
   }, [records, categories, fields, weeks]);
 
-  // 习惯达成率
-  const total = weeks.length;
-  const habitRings = habits.map((h) => {
-    const done = habitLogs.filter(
-      (l) => l.habitId === h.id && l.status === 'completed'
-    ).length;
-    const pct = total ? Math.round(done / total * 100) : 0;
+  // 习惯达成率（使用新的 habitStats）
+  const habitRings = habitStats.map((h) => {
+    const pct = h.pct;
     const color = pct >= 70 ? '#2E7D52' : pct >= 40 ? '#BA7517' : '#E24B4A';
     const circ = 2 * Math.PI * 22;
     const filled = (circ * pct / 100).toFixed(1);
@@ -236,6 +274,9 @@ export function DataPage() {
           <div className="title">数据中心</div>
           <div style={{ marginTop: 10 }}>
             <div className="top-tabs">
+              <button className={`ttab ${dataTab === 'week' ? 'on' : ''}`} onClick={() => setDataTab('week')}>
+                本周
+              </button>
               <button className={`ttab ${dataTab === 'month' ? 'on' : ''}`} onClick={() => setDataTab('month')}>
                 本月
               </button>
@@ -246,26 +287,56 @@ export function DataPage() {
           </div>
         </div>
 
-        <div className="month-nav">
-          <button onClick={() => changeMonth(-1)}>‹</button>
-          <span>{month.y}年{month.m}月</span>
-          <button onClick={() => changeMonth(1)}>›</button>
-        </div>
-
         <div className="sbody">
-          {/* BMI 趋势 */}
-          <div className="sec-label">BMI 趋势</div>
-          <div className="chart-card">
-            <div className="chart-title">体重指数 · BMI</div>
-            <div className="chart-sub">18.5–24 为正常区间</div>
-            <div style={{ height: 120 }}>
-              <canvas ref={bmiChartRef} />
-            </div>
+          {/* 健康评分统计 */}
+          <div className="sec-label">健康评分平均</div>
+          <div className="stats-grid">
+            {categoryStats.map((cat) => (
+              <div key={cat.id} className="stat-card">
+                <div className="stat-name">{cat.name}</div>
+                <div className="stat-value" style={{ 
+                  color: cat.avg && cat.avg <= 1.5 ? '#2E7D52' 
+                    : cat.avg && cat.avg <= 2.5 ? '#BA7517' 
+                    : cat.avg ? '#E24B4A' : 'var(--brown-light)' 
+                }}>
+                  {cat.avg ?? '—'}
+                </div>
+                <div className="stat-label">
+                  {cat.avg === 1 ? '状态极佳' 
+                    : cat.avg === 2 ? '轻微不适' 
+                    : cat.avg === 3 ? '不适加重' 
+                    : cat.avg === 4 ? '问题严重'
+                    : cat.avg && cat.avg < 2 ? '状态良好'
+                    : cat.avg && cat.avg < 3 ? '需要关注'
+                    : cat.avg ? '需要改善'
+                    : '暂无数据'}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* 健康趋势 */}
-          <div className="sec-label">健康趋势</div>
-          <div id="health-charts-data" />
+          {/* 习惯完成率 */}
+          <div className="sec-label">习惯达成率</div>
+          <div className="habits-grid">
+            {habitRings.map(({ h, pct, filled, empty, color, label }) => (
+              <div key={h.id} className="habit-ring">
+                <svg viewBox="0 0 50 50">
+                  <circle cx="25" cy="25" r="22" fill="none" stroke="#E8E8E8" strokeWidth="4" />
+                  <circle 
+                    cx="25" cy="25" r="22" 
+                    fill="none" 
+                    stroke={color} 
+                    strokeWidth="4" 
+                    strokeLinecap="round"
+                    strokeDasharray={`${filled} ${empty}`}
+                    transform="rotate(-90 25 25)"
+                  />
+                </svg>
+                <div className="habit-pct" style={{ color }}>{pct}%</div>
+                <div className="habit-name">{label}</div>
+              </div>
+            ))}
+          </div>
 
           {/* 习惯达成率 */}
           <div className="sec-label">习惯达成率</div>
