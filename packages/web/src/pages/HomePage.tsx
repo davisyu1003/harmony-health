@@ -2,7 +2,7 @@
 // 首页
 // ============================================================
 
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useReducer } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
@@ -30,6 +30,7 @@ export function HomePage() {
   const location = useLocation();
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   // 根据当前路径确定 activeNav
   const activeNav = location.pathname === '/settings' ? 'settings' 
@@ -197,6 +198,7 @@ export function HomePage() {
       syncStatus: 'pending' as const,
     };
     await upsertRecord(record);
+    forceUpdate();
     syncService.enqueueChange({
       entityType: 'health_record',
       entityId: id,
