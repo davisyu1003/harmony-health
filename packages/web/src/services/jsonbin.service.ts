@@ -21,7 +21,7 @@ class JsonBinService {
 
   constructor() {
     // JSONBin Master Key
-    this.apiKey = '$2a$10$ucgutK6AlkVIxe7BXKDmquTIgmZS7Cea0eSFJy1Ct56pBdzSUW/Oy';
+    this.apiKey = '$2a$10$KqENovC896OY6vnmayJH1.lVmygWphRTMs46yOqM9iHw2aVqRb3Ju';
   }
 
   // 初始化 - 获取 bin ID
