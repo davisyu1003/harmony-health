@@ -3,7 +3,7 @@
 // ============================================================
 
 import { useRef, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
   CategoryScale,
@@ -27,9 +27,14 @@ interface ToastState {
 
 export function HomePage() {
   const navigate = useNavigate();
-  const [activeNav, setActiveNav] = useState<'home' | 'data' | 'settings'>('home');
+  const location = useLocation();
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 根据当前路径确定 activeNav
+  const activeNav = location.pathname === '/settings' ? 'settings' 
+    : location.pathname === '/data' ? 'data' 
+    : 'home';
 
   const {
     categories,
@@ -55,7 +60,6 @@ export function HomePage() {
 
   // 导航
   const navTo = (name: 'home' | 'data' | 'settings') => {
-    setActiveNav(name);
     navigate(`/${name === 'home' ? '' : name}`);
   };
 
