@@ -27,23 +27,31 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: #EDE5D8;
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
   display: flex;
   justify-content: center;
-  padding: 16px 0 40px;
   -webkit-font-smoothing: antialiased;
+  /* Remove padding on mobile */
+  padding: 0;
+  margin: 0;
 }
 
-/* Phone Frame */
+/* Phone Frame - only show on desktop, not on mobile */
 .phone {
-  width: 390px;
+  width: 100%;
+  max-width: 430px; /* iPhone 15 Pro Max width */
   background: var(--bg);
-  border-radius: 40px;
-  border: 2px solid #D4C4B4;
+  border-radius: 0; /* No rounded corners on mobile */
+  border: none;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 780px;
+  min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
+  /* Safe area for notch iPhones */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Screens */
@@ -52,6 +60,8 @@ body {
   flex: 1;
   flex-direction: column;
   overflow-y: auto;
+  /* Ensure content doesn't get hidden behind bottom nav on mobile */
+  padding-bottom: calc(70px + env(safe-area-inset-bottom));
 }
 .screen.active {
   display: flex;
@@ -369,6 +379,14 @@ body {
   border-top: 0.5px solid var(--border);
   flex-shrink: 0;
   padding: 6px 0;
+  /* Fix to bottom of phone frame */
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  /* Safe area for iPhone home indicator */
+  padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  z-index: 100;
 }
 .bnav {
   flex: 1;
