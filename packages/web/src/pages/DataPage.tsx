@@ -29,38 +29,45 @@ function getCurrentWeekNumber(): number {
 }
 
 // 获取当前月有哪几周（通常4-5周）
-function getWeeksOfCurrentMonth(): string[] {
+function getWeeksOfCurrentMonth(): { label: string; weekNum: number; year: number }[] {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
+  
+  // Find the Monday of the first week that contains this month
+  // If first day of month is not Monday, go back to the Monday
+  let firstMonday = new Date(firstDay);
+  if (firstMonday.getDay() !== 1) {
+    const daysBack = firstMonday.getDay() === 0 ? 6 : firstMonday.getDay() - 1;
+    firstMonday.setDate(firstMonday.getDate() - daysBack);
+  }
+  
   const weeks: { label: string; weekNum: number; year: number }[] = [];
-
-  // 遍历月内所有天，找到每个周一
   const visited = new Set<string>();
-  for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
-    const dayOfWeek = d.getDay();
-    if (dayOfWeek === 1) { // 周一
-      const wYear = d.getFullYear();
-      const jan1 = new Date(wYear, 0, 1);
-      const days = Math.floor((d.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000));
-      const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
-      const label = `${wYear}-W${weekNum.toString().padStart(2, '0')}`;
-      if (!visited.has(label)) {
-        visited.add(label);
-        const fmt = (n: number) => n.toString().padStart(2, '0');
-        const sunday = new Date(d);
-        sunday.setDate(d.getDate() + 6);
-        weeks.push({
-          label: `W${weekNum} ${fmt(d.getMonth() + 1)}/${fmt(d.getDate())}-${fmt(sunday.getMonth() + 1)}/${fmt(sunday.getDate())}`,
-          weekNum,
-          year: wYear,
-        });
-      }
+  
+  // Collect up to 5 weeks (some months span 5 weeks)
+  const current = new Date(firstMonday);
+  for (let i = 0; i < 5; i++) {
+    current.setDate(firstMonday.getDate() + i * 7);
+    
+    // Stop if we've gone past the month
+    if (current > lastDay) break;
+    
+    const wYear = current.getFullYear();
+    const jan1 = new Date(wYear, 0, 1);
+    const days = Math.floor((current.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000));
+    const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
+    const label = `W${weekNum} ${(current.getMonth() + 1).toString().padStart(2, '0')}/${current.getDate().toString().padStart(2, '0')}-${(new Date(current.getTime() + 6 * 24 * 60 * 60 * 1000).getMonth() + 1).toString().padStart(2, '0')}/${new Date(current.getTime() + 6 * 24 * 60 * 60 * 1000).getDate().toString().padStart(2, '0')}`;
+    
+    if (!visited.has(label)) {
+      visited.add(label);
+      weeks.push({ label, weekNum, year: wYear });
     }
   }
-  return weeks.map(w => w.label);
+  
+  return weeks;
 }
 
 // 计算指定周和年的分类平均分
@@ -134,7 +141,7 @@ export function DataPage() {
   
   // 本月周数据
   const monthWeeks = useMemo(() => getWeeksOfCurrentMonth(), []);
-
+    
   // ========== 本周数据 ==========
   // 每个分类本周平均分
   const weekCategoryStats = categories.map(cat => {
@@ -163,18 +170,15 @@ export function DataPage() {
     return { ...h, completed, total };
   });
 
-  const weekTotalCompleted = weekHabitStats.reduce((sum, h) => sum + h.completed, 0);
+  const weekCompletedItems = weekHabitStats.filter(h => h.completed > 0).length;
   const weekTotalHabits = habits.length;
-  const weekOverallPct = weekTotalHabits > 0 ? Math.round(weekTotalCompleted / (weekTotalHabits * 7) * 100) : 0;
+  const weekOverallPct = weekTotalHabits > 0 ? Math.round(weekCompletedItems / weekTotalHabits * 100) : 0;
 
   // ========== 本月数据 ==========
   // 四周折线图数据（按分类）
   const monthCategoryTrends = categories.map(cat => {
-    const weekAvgs = monthWeeks.map(weekLabel => {
-      // 从 weekLabel 提取 weekNum
-      const match = weekLabel.match(/W(\d+)/);
-      const wNum = match && match[1] ? parseInt(match[1]) : 1;
-      return calcCategoryAvgForWeek(cat.id, wNum, currentYear, allRecords, fields);
+    const weekAvgs = monthWeeks.map(w => {
+      return calcCategoryAvgForWeek(cat.id, w.weekNum, w.year, allRecords, fields);
     });
     return { ...cat, weekAvgs };
   });
@@ -186,7 +190,7 @@ export function DataPage() {
       return l.habitId === h.id && d.getFullYear() === currentYear && d.getMonth() === now.getMonth();
     });
     const completed = monthLogs.filter(l => l.status === 'completed').length;
-    const total = monthWeeks.length; // 本月周数
+    const total = monthWeeks.length || 4; // 本月周数
     const pct = total > 0 ? Math.round(completed / total * 100) : 0;
     return { ...h, completed, total, pct };
   });
@@ -219,7 +223,7 @@ export function DataPage() {
       card.appendChild(canvasWrap);
 
       const labels = monthWeeks.map(w => {
-        const m = w.match(/W\d+\s+(\d+)\/(\d+)/);
+        const m = w.label.match(/W\d+\s+(\d+)\/(\d+)/);
         return m ? `${m[1]}/${m[2]}` : w;
       });
 
