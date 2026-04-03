@@ -92,9 +92,11 @@ body {
 
 .hdr-white {
   background: var(--bg);
-  padding: 44px 18px 12px;
+  padding: 44px 18px 12px 18px;
   border-bottom: 0.5px solid var(--border);
   flex-shrink: 0;
+  /* 首页顶部向上提高 50px */
+  margin-top: -50px;
 }
 .hdr-white .title {
   font-size: 20px;
@@ -677,9 +679,9 @@ body {
   line-height: 1.3;
 }
 
-/* sbody */
+/* sbody - 数据页和设置页底部加长50px */
 .sbody {
-  padding: 14px 16px 20px;
+  padding: 14px 16px 70px;
 }
 
 /* 数据页统计卡片 */
