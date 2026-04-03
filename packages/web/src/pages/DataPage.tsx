@@ -12,13 +12,14 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  LineController,
   Filler,
   Tooltip,
   Legend,
 } from 'chart.js';
 import { useHealthStore } from '@/stores/health.store';
 
-Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+Chart.register(CategoryScale, LinearScale, PointElement, LineElement, LineController, Filler, Tooltip, Legend);
 
 // 获取当前周是第几周（ISO）
 function getCurrentWeekNumber(): number {
