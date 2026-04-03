@@ -224,7 +224,7 @@ export function DataPage() {
 
       const labels = monthWeeks.map(w => {
         const m = w.label.match(/W\d+\s+(\d+)\/(\d+)/);
-        return m ? `${m[1]}/${m[2]}` : w;
+        return m ? `${m[1]}/${m[2]}` : w.label;
       });
 
       container.appendChild(card);
