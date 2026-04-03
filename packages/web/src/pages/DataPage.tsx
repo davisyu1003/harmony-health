@@ -191,7 +191,7 @@ export function DataPage() {
       return l.habitId === h.id && d.getFullYear() === currentYear && d.getMonth() === now.getMonth();
     });
     const completed = monthLogs.filter(l => l.status === 'completed').length;
-    const total = monthWeeks.length || 4; // 本月周数
+    const total = 4; // 本月固定四周
     const pct = total > 0 ? Math.round(completed / total * 100) : 0;
     return { ...h, completed, total, pct };
   });
