@@ -1,8 +1,10 @@
 // ============================================================
-// 数据中心页
+// 数据中心页 - 重构版
+// 本周：健康评分平均分+环比，习惯达成列表
+// 本月：四周折线图，习惯达成率
 // ============================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Chart,
@@ -18,254 +20,251 @@ import { useHealthStore } from '@/stores/health.store';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
+// 获取当前周是第几周（ISO）
+function getCurrentWeekNumber(): number {
+  const now = new Date();
+  const jan1 = new Date(now.getFullYear(), 0, 1);
+  const days = Math.floor((now.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000));
+  return Math.ceil((days + jan1.getDay() + 1) / 7);
+}
+
+// 获取当前月有哪几周（通常4-5周）
+function getWeeksOfCurrentMonth(): string[] {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const weeks: { label: string; weekNum: number; year: number }[] = [];
+
+  // 遍历月内所有天，找到每个周一
+  const visited = new Set<string>();
+  for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
+    const dayOfWeek = d.getDay();
+    if (dayOfWeek === 1) { // 周一
+      const wYear = d.getFullYear();
+      const jan1 = new Date(wYear, 0, 1);
+      const days = Math.floor((d.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000));
+      const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7);
+      const label = `${wYear}-W${weekNum.toString().padStart(2, '0')}`;
+      if (!visited.has(label)) {
+        visited.add(label);
+        const fmt = (n: number) => n.toString().padStart(2, '0');
+        const sunday = new Date(d);
+        sunday.setDate(d.getDate() + 6);
+        weeks.push({
+          label: `W${weekNum} ${fmt(d.getMonth() + 1)}/${fmt(d.getDate())}-${fmt(sunday.getMonth() + 1)}/${fmt(sunday.getDate())}`,
+          weekNum,
+          year: wYear,
+        });
+      }
+    }
+  }
+  return weeks.map(w => w.label);
+}
+
+// 计算指定周和年的分类平均分
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function calcCategoryAvgForWeek(catId: string, weekNum: number, year: number, allRecords: any[], fields: { id: string; categoryId: string }[]): number | null {
+  const catFields = fields.filter(f => f.categoryId === catId);
+  const catRecords = allRecords.filter((r) =>
+    catFields.some((f) => f.id === r.fieldId) &&
+    r.recordWeek === weekNum &&
+    r.recordYear === year &&
+    r.value > 0
+  );
+  if (catRecords.length === 0) return null;
+  const sum = catRecords.reduce((acc: number, r) => acc + r.value, 0);
+  return Math.round(sum / catRecords.length * 10) / 10;
+}
+
+// 分数颜色：越高越红，越低越绿（1=最佳，4=最差）
+function scoreColor(avg: number | null): string {
+  if (avg === null) return 'var(--brown-light)';
+  if (avg <= 1.5) return '#2E7D52'; // 绿
+  if (avg <= 2.5) return '#BA7517'; // 橙
+  return '#E24B4A'; // 红
+}
+
+// 分数描述
+function scoreLabel(avg: number | null): string {
+  if (avg === null) return '暂无数据';
+  if (avg <= 1.5) return '状态良好';
+  if (avg <= 2.5) return '轻微不适';
+  return '需要关注';
+}
+
+// 环比计算
+function calcChange(current: number | null, previous: number | null): { value: number | null; text: string; color: string } {
+  if (current === null && previous === null) return { value: null, text: '', color: 'var(--brown-light)' };
+  if (current === null) return { value: null, text: '', color: 'var(--brown-light)' };
+  if (previous === null) return { value: null, text: '无上周数据', color: 'var(--brown-light)' };
+  const diff = current - previous;
+  if (Math.abs(diff) < 0.1) return { value: diff, text: '持平', color: '#BA7517' };
+  const sign = diff > 0 ? '+' : '';
+  return { value: diff, text: `${sign}${diff.toFixed(1)}分`, color: diff > 0 ? '#E24B4A' : '#2E7D52' };
+}
+
 export function DataPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [dataTab, setDataTab] = useState<'week' | 'month' | 'year'>('week');
+  const [dataTab, setDataTab] = useState<'week' | 'month'>('week');
+    const chartInstances = useRef<Chart[]>([]);
 
-  const bmiChartRef = useRef<HTMLCanvasElement | null>(null);
-  const bmiChartInstance = useRef<Chart | null>(null);
-  const healthChartInstances = useRef<Chart[]>([]);
+  const { categories, fields, records, habits, habitLogs } = useHealthStore();
 
-  const { categories, fields, records, weeklyMeta, weeks, habits, habitLogs } = useHealthStore();
-
-  // Determine active nav from URL
-  const activeNav = location.pathname === '/settings' ? 'settings' 
-    : location.pathname === '/data' ? 'data' 
+  const activeNav = location.pathname === '/settings' ? 'settings'
+    : location.pathname === '/data' ? 'data'
     : 'home';
 
   const navTo = (name: 'home' | 'data' | 'settings') => {
     navigate(`/${name === 'home' ? '' : name}`);
   };
 
-  // 获取所有周的数据
   const allRecords = Array.from(records.values());
 
-  // 根据时间范围过滤数据
-  const getFilteredRecords = () => {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1;
-    const currentWeek = Math.ceil((now.getDate() + new Date(currentYear, now.getMonth(), 1).getDay()) / 7);
+  // 当前周信息
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentWeekNum = getCurrentWeekNumber();
+  
+  // 上周信息
+  const lastWeekNum = currentWeekNum > 1 ? currentWeekNum - 1 : 52;
+  const lastWeekYear = currentWeekNum > 1 ? currentYear : currentYear - 1;
+  
+  // 本月周数据
+  const monthWeeks = useMemo(() => getWeeksOfCurrentMonth(), []);
 
-    if (dataTab === 'week') {
-      // 本周数据
-      return allRecords.filter(r => r.recordYear === currentYear && r.recordWeek === currentWeek);
-    } else if (dataTab === 'month') {
-      // 本月数据
-      return allRecords.filter(r => {
-        const d = new Date(r.recordDate);
-        return d.getFullYear() === currentYear && d.getMonth() + 1 === currentMonth;
-      });
-    } else {
-      // 本年数据
-      return allRecords.filter(r => r.recordYear === currentYear);
-    }
-  };
-
-  const filteredRecords = getFilteredRecords();
-
-  // 计算每个分类的平均分
-  const categoryStats = categories.map(cat => {
-    const catFields = fields.filter(f => f.categoryId === cat.id);
-    const catRecords = filteredRecords.filter(r => catFields.some(f => f.id === r.fieldId) && r.value > 0);
-    if (catRecords.length === 0) return { ...cat, avg: null, count: 0 };
-    const sum = catRecords.reduce((acc, r) => acc + r.value, 0);
-    const avg = Math.round(sum / catRecords.length * 10) / 10;
-    return { ...cat, avg, count: catRecords.length };
+  // ========== 本周数据 ==========
+  // 每个分类本周平均分
+  const weekCategoryStats = categories.map(cat => {
+    const avg = calcCategoryAvgForWeek(cat.id, currentWeekNum, currentYear, allRecords, fields);
+    return { ...cat, avg };
   });
 
-  // 计算习惯完成率
-  const habitStats = habits.map(h => {
-    let totalDays = 7; // 本周默认7天
-    
-    if (dataTab === 'month') {
-      totalDays = 30;
-    } else if (dataTab === 'year') {
-      totalDays = 365;
-    }
-    
-    const completedLogs = habitLogs.filter(l => 
-      l.habitId === h.id && l.status === 'completed'
-    ).length;
-    
-    const pct = Math.min(100, Math.round(completedLogs / totalDays * 100));
-    return { ...h, pct, completed: completedLogs, total: totalDays };
+  // 每个分类上周平均分
+  const lastWeekCategoryStats = categories.map(cat => {
+    const avg = calcCategoryAvgForWeek(cat.id, lastWeekNum, lastWeekYear, allRecords, fields);
+    return { ...cat, avg };
   });
 
-  // 渲染 BMI 趋势图
-  useEffect(() => {
-    if (!bmiChartRef.current) return;
-
-    if (bmiChartInstance.current) {
-      bmiChartInstance.current.destroy();
-    }
-
-    const labels = weeks.map((w) => w.split(' ')[0]);
-    const data = weeks.map((_, i) => {
-      // 从 weekLabel 提取 weekKey
-      const weekMeta = weeklyMeta.get(`2026-W${((4 - i) + 1).toString().padStart(2, '0')}`);
-      if (!weekMeta || !weekMeta.weight || !weekMeta.height) return null;
-      const w = parseFloat(weekMeta.weight.toString());
-      const h = parseFloat(weekMeta.height.toString());
-      if (w && h && h > 50) return +(w / Math.pow(h / 100, 2)).toFixed(1);
-      return null;
+  // 本周习惯数据
+  const weekHabitStats = habits.map(h => {
+    const weekLogs = habitLogs.filter(l => l.habitId === h.id);
+    // 获取本周的记录
+    const thisWeekLogs = weekLogs.filter(l => {
+      // 简化：取最近7天的记录
+      const logDate = new Date(l.logDate);
+      const daysDiff = Math.floor((now.getTime() - logDate.getTime()) / (24 * 60 * 60 * 1000));
+      return daysDiff < 7;
     });
+    const completed = thisWeekLogs.filter(l => l.status === 'completed').length;
+    const total = thisWeekLogs.length;
+    return { ...h, completed, total };
+  });
 
-    bmiChartInstance.current = new Chart(bmiChartRef.current, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          borderColor: '#C8694A',
-          backgroundColor: 'rgba(200,105,74,0.1)',
-          borderWidth: 2,
-          pointRadius: 4,
-          pointBackgroundColor: '#C8694A',
-          tension: 0.4,
-          fill: true,
-          spanGaps: true,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { min: 15, max: 35, ticks: { stepSize: 5, font: { size: 10 } }, grid: { color: 'rgba(200,150,120,.12)' } },
-          x: { ticks: { font: { size: 9 } }, grid: { display: false } },
-        },
-      },
+  const weekTotalCompleted = weekHabitStats.reduce((sum, h) => sum + h.completed, 0);
+  const weekTotalHabits = habits.length;
+  const weekOverallPct = weekTotalHabits > 0 ? Math.round(weekTotalCompleted / (weekTotalHabits * 7) * 100) : 0;
+
+  // ========== 本月数据 ==========
+  // 四周折线图数据（按分类）
+  const monthCategoryTrends = categories.map(cat => {
+    const weekAvgs = monthWeeks.map(weekLabel => {
+      // 从 weekLabel 提取 weekNum
+      const match = weekLabel.match(/W(\d+)/);
+      const wNum = match && match[1] ? parseInt(match[1]) : 1;
+      return calcCategoryAvgForWeek(cat.id, wNum, currentYear, allRecords, fields);
     });
+    return { ...cat, weekAvgs };
+  });
 
-    return () => {
-      bmiChartInstance.current?.destroy();
-    };
-  }, [weeklyMeta, weeks]);
+  // 本月习惯达成率
+  const monthHabitStats = habits.map(h => {
+    const monthLogs = habitLogs.filter(l => {
+      const d = new Date(l.logDate);
+      return l.habitId === h.id && d.getFullYear() === currentYear && d.getMonth() === now.getMonth();
+    });
+    const completed = monthLogs.filter(l => l.status === 'completed').length;
+    const total = monthWeeks.length; // 本月周数
+    const pct = total > 0 ? Math.round(completed / total * 100) : 0;
+    return { ...h, completed, total, pct };
+  });
 
-  // 渲染健康趋势图
+  // 渲染折线图
   useEffect(() => {
-    healthChartInstances.current.forEach((c) => c.destroy());
-    healthChartInstances.current = [];
+    if (dataTab !== 'month') return;
 
-    // 渲染每个分类的趋势图
-    const container = document.getElementById('health-charts-data');
+    chartInstances.current.forEach(c => c.destroy());
+    chartInstances.current = [];
+
+    const container = document.getElementById('month-charts');
     if (!container) return;
     container.innerHTML = '';
 
-    const labels = weeks.map((w) => w.split(' ')[0]);
+    monthCategoryTrends.forEach((cat, catIdx) => {
+      const validAvgs = cat.weekAvgs.filter((v): v is number => v !== null);
+      if (validAvgs.length === 0) return;
 
-    categories.forEach((cat) => {
-      const catFields = fields.filter((f) => f.categoryId === cat.id);
-      if (catFields.length === 0) return;
+      const card = document.createElement('div');
+      card.className = 'chart-card';
+      card.innerHTML = `<div class="chart-title">${cat.name}</div>`;
 
-      const div = document.createElement('div');
-      div.className = 'chart-card';
+      const canvasWrap = document.createElement('div');
+      canvasWrap.style.height = '90px';
+      const canvas = document.createElement('canvas');
+      const canvasId = `month-chart-${catIdx}`;
+      canvas.id = canvasId;
+      canvasWrap.appendChild(canvas);
+      card.appendChild(canvasWrap);
 
-      // 只渲染前两个字段
-      const fieldCharts = catFields.slice(0, 2).map((f) => {
-        const vals = weeks.map((_, i) => {
-          const recs = allRecords.filter((r) => r.fieldId === f.id && !r.deletedAt);
-          const rec = recs.find((r) => {
-            return r.recordWeek === (5 - i) && r.recordYear === 2026;
-          });
-          return rec?.value ?? null;
-        });
-
-        const validVals = vals.filter((v): v is number => v !== null);
-        const improving = validVals.length >= 2 &&
-          (validVals[validVals.length - 1] ?? 0) <= (validVals[0] ?? 0);
-        const color = improving ? '#2E7D52' : '#E24B4A';
-
-        const chartDiv = document.createElement('div');
-        chartDiv.style.fontSize = '11px';
-        chartDiv.style.color = 'var(--brown-mid)';
-        chartDiv.style.margin = '6px 0 3px';
-        chartDiv.textContent = f.name;
-
-        const canvasWrap = document.createElement('div');
-        canvasWrap.style.height = '75px';
-        const canvas = document.createElement('canvas');
-        canvas.id = `hc-${f.id}`;
-        canvasWrap.appendChild(canvas);
-        return { f, vals, color, chartDiv, canvasWrap };
+      const labels = monthWeeks.map(w => {
+        const m = w.match(/W\d+\s+(\d+)\/(\d+)/);
+        return m ? `${m[1]}/${m[2]}` : w;
       });
 
-      div.innerHTML = `
-        <div class="chart-title">${cat.name}</div>
-        <div class="chart-sub">1=完全恢复 → 4=问题严重</div>
-      `;
-      fieldCharts.forEach(({ chartDiv, canvasWrap }) => {
-        div.appendChild(chartDiv);
-        div.appendChild(canvasWrap);
-      });
-      div.innerHTML += `
-        <div class="chart-legend">
-          <div class="leg"><div class="leg-dot" style="background:#2E7D52;"></div>逐步向好</div>
-          <div class="leg"><div class="leg-dot" style="background:#E24B4A;"></div>逐步变差</div>
-        </div>
-      `;
+      container.appendChild(card);
 
-      container.appendChild(div);
-
-      // 创建 Chart
-      fieldCharts.forEach(({ f, vals, color }) => {
-        const el = document.getElementById(`hc-${f.id}`) as unknown as HTMLCanvasElement;
-        if (!el) return;
-        const ch = new Chart(el, {
-          type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              data: vals,
-              borderColor: color,
-              backgroundColor: color + '18',
-              borderWidth: 2,
-              pointRadius: 3,
-              pointBackgroundColor: color,
-              tension: 0.4,
-              fill: true,
-            }],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: {
-              y: {
-                min: 0.5,
-                max: 4.5,
-                ticks: {
-                  stepSize: 1,
-                  callback: (v) => ({ 1: '佳', 2: '轻', 3: '重', 4: '差' }[Number(v)] ?? ''),
-                  font: { size: 9 },
-                },
-                grid: { color: 'rgba(200,150,120,.1)' },
+      const el = document.getElementById(canvasId) as HTMLCanvasElement;
+      const color = scoreColor(validAvgs[validAvgs.length - 1] ?? null);
+      const ch = new Chart(el, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: cat.weekAvgs,
+            borderColor: color,
+            backgroundColor: color + '18',
+            borderWidth: 2,
+            pointRadius: 4,
+            pointBackgroundColor: color,
+            tension: 0.4,
+            fill: true,
+            spanGaps: true,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: {
+              min: 0.5,
+              max: 4.5,
+              ticks: {
+                stepSize: 1,
+                callback: (v) => ({ 1: '佳', 2: '轻', 3: '重', 4: '差' }[Number(v)] ?? ''),
+                font: { size: 9 },
               },
-              x: { ticks: { font: { size: 9 } }, grid: { display: false } },
+              grid: { color: 'rgba(200,150,120,.1)' },
             },
+            x: { ticks: { font: { size: 9 } }, grid: { display: false } },
           },
-        });
-        healthChartInstances.current.push(ch);
+        },
       });
+      chartInstances.current.push(ch);
     });
-
-    return () => {
-      healthChartInstances.current.forEach((c) => c.destroy());
-    };
-  }, [records, categories, fields, weeks]);
-
-  // 习惯达成率（使用新的 habitStats）
-  const habitRings = habitStats.map((h) => {
-    const pct = h.pct;
-    const color = pct >= 70 ? '#2E7D52' : pct >= 40 ? '#BA7517' : '#E24B4A';
-    const circ = 2 * Math.PI * 22;
-    const filled = (circ * pct / 100).toFixed(1);
-    const empty = (parseFloat(filled) ? circ - parseFloat(filled) : circ).toFixed(1);
-    const label = h.name.length > 6 ? h.name.slice(0, 6) + '…' : h.name;
-    return { h, pct, filled, empty, color, label };
-  });
+  }, [dataTab, monthCategoryTrends, monthWeeks]);
 
   return (
     <>
@@ -274,98 +273,110 @@ export function DataPage() {
           <div className="title">数据中心</div>
           <div style={{ marginTop: 10 }}>
             <div className="top-tabs">
-              <button className={`ttab ${dataTab === 'week' ? 'on' : ''}`} onClick={() => setDataTab('week')}>
-                本周
-              </button>
-              <button className={`ttab ${dataTab === 'month' ? 'on' : ''}`} onClick={() => setDataTab('month')}>
-                本月
-              </button>
-              <button className={`ttab ${dataTab === 'year' ? 'on' : ''}`} onClick={() => setDataTab('year')}>
-                本年
-              </button>
+              <button className={`ttab ${dataTab === 'week' ? 'on' : ''}`} onClick={() => setDataTab('week')}>本周</button>
+              <button className={`ttab ${dataTab === 'month' ? 'on' : ''}`} onClick={() => setDataTab('month')}>本月</button>
             </div>
           </div>
         </div>
 
         <div className="sbody">
-          {/* 健康评分统计 */}
-          <div className="sec-label">健康评分平均</div>
-          <div className="stats-grid">
-            {categoryStats.map((cat) => (
-              <div key={cat.id} className="stat-card">
-                <div className="stat-name">{cat.name}</div>
-                <div className="stat-value" style={{ 
-                  color: cat.avg && cat.avg <= 1.5 ? '#2E7D52' 
-                    : cat.avg && cat.avg <= 2.5 ? '#BA7517' 
-                    : cat.avg ? '#E24B4A' : 'var(--brown-light)' 
-                }}>
-                  {cat.avg ?? '—'}
-                </div>
-                <div className="stat-label">
-                  {cat.avg === 1 ? '状态极佳' 
-                    : cat.avg === 2 ? '轻微不适' 
-                    : cat.avg === 3 ? '不适加重' 
-                    : cat.avg === 4 ? '问题严重'
-                    : cat.avg && cat.avg < 2 ? '状态良好'
-                    : cat.avg && cat.avg < 3 ? '需要关注'
-                    : cat.avg ? '需要改善'
-                    : '暂无数据'}
-                </div>
+          {dataTab === 'week' ? (
+            <>
+              {/* ========== 本周健康评分 ========== */}
+              <div className="sec-label">健康评分</div>
+              <div className="stats-grid">
+                {weekCategoryStats.map((cat, idx) => {
+                  const prevAvg = lastWeekCategoryStats[idx]?.avg ?? null;
+                  const change = calcChange(cat.avg, prevAvg);
+                  return (
+                    <div key={cat.id} className="stat-card">
+                      <div className="stat-name">{cat.name}</div>
+                      <div className="stat-value" style={{ color: scoreColor(cat.avg) }}>
+                        {cat.avg ?? '—'}
+                      </div>
+                      <div className="stat-label" style={{ color: scoreColor(cat.avg) }}>
+                        {scoreLabel(cat.avg)}
+                      </div>
+                      {change.text && (
+                        <div style={{ fontSize: 11, color: change.color, marginTop: 4 }}>
+                          环比上周：{change.text}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
 
-          {/* 习惯完成率 */}
-          <div className="sec-label">习惯达成率</div>
-          <div className="habits-grid">
-            {habitRings.map(({ h, pct, filled, empty, color, label }) => (
-              <div key={h.id} className="habit-ring">
-                <svg viewBox="0 0 50 50">
-                  <circle cx="25" cy="25" r="22" fill="none" stroke="#E8E8E8" strokeWidth="4" />
-                  <circle 
-                    cx="25" cy="25" r="22" 
-                    fill="none" 
-                    stroke={color} 
-                    strokeWidth="4" 
-                    strokeLinecap="round"
-                    strokeDasharray={`${filled} ${empty}`}
-                    transform="rotate(-90 25 25)"
-                  />
-                </svg>
-                <div className="habit-pct" style={{ color }}>{pct}%</div>
-                <div className="habit-name">{label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* 习惯达成率 */}
-          <div className="sec-label">习惯达成率</div>
-          <div className="chart-card">
-            <div className="chart-title">本月养生计划完成情况</div>
-            <div className="chart-sub">完成次数 / 本月总周次</div>
-            <div className="rings-row">
-              {habitRings.map(({ h, pct, filled, empty, color, label }) => (
-                <div className="ring-item" key={h.id}>
-                  <svg width="64" height="64" viewBox="0 0 64 64">
-                    <circle cx="32" cy="32" r="22" fill="none" stroke="#F0E5DA" strokeWidth="7" />
-                    <circle
-                      cx="32" cy="32" r="22"
-                      fill="none"
-                      stroke={color}
-                      strokeWidth="7"
-                      strokeDasharray={`${filled} ${empty}`}
-                      strokeLinecap="round"
-                      transform="rotate(-90 32 32)"
-                    />
-                    <text x="32" y="37" textAnchor="middle" fontSize="13" fontWeight="600" fill={color}>
-                      {pct}%
-                    </text>
-                  </svg>
-                  <span>{label}</span>
+              {/* ========== 本周习惯达成 ========== */}
+              <div className="sec-label">习惯达成</div>
+              <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
+                {/* 汇总 */}
+                <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 14 }}>总体达成率</span>
+                  <span style={{ fontSize: 18, fontWeight: 700, color: weekOverallPct >= 70 ? '#2E7D52' : weekOverallPct >= 40 ? '#BA7517' : '#E24B4A' }}>
+                    {weekOverallPct}%
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
+                {/* 逐项 */}
+                {weekHabitStats.map((h, idx) => (
+                  <div key={h.id} style={{
+                    padding: '10px 14px',
+                    borderBottom: idx < weekHabitStats.length - 1 ? '0.5px solid var(--border)' : 'none',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: 13 }}>{h.name}</span>
+                    <span style={{
+                      fontSize: 12,
+                      padding: '2px 8px',
+                      borderRadius: 10,
+                      background: h.completed > 0 ? '#E8F5E9' : '#FFEBEE',
+                      color: h.completed > 0 ? '#2E7D52' : '#E24B4A',
+                    }}>
+                      {h.completed > 0 ? '✓ 已完成' : '○ 未完成'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ========== 本月健康评分折线图 ========== */}
+              <div className="sec-label">健康评分趋势</div>
+              <div id="month-charts"></div>
+
+              {/* ========== 本月习惯达成率 ========== */}
+              <div className="sec-label">习惯达成率</div>
+              <div style={{ background: '#fff', borderRadius: 12, overflow: 'hidden' }}>
+                {monthHabitStats.map((h, idx) => (
+                  <div key={h.id} style={{
+                    padding: '12px 14px',
+                    borderBottom: idx < monthHabitStats.length - 1 ? '0.5px solid var(--border)' : 'none',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13 }}>{h.name}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: h.pct >= 70 ? '#2E7D52' : h.pct >= 40 ? '#BA7517' : '#E24B4A' }}>
+                        {h.pct}%
+                      </span>
+                    </div>
+                    <div style={{ height: 6, background: '#F0E5DA', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        width: `${h.pct}%`,
+                        background: h.pct >= 70 ? '#2E7D52' : h.pct >= 40 ? '#BA7517' : '#E24B4A',
+                        borderRadius: 3,
+                        transition: 'width 0.3s',
+                      }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--brown-light)', marginTop: 4 }}>
+                      {h.completed}次 / {h.total}周
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
